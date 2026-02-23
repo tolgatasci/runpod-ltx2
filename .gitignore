@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (too large for git)
+*.safetensors
+*.ckpt
+*.bin
+models/
+
+# Test outputs
+test_output_*.mp4
+*.mp4
+
+# Environment
+.env

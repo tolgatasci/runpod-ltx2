@@ -1,0 +1,28 @@
+# ============================================================
+# LTX-2 RunPod Serverless - Dependencies
+# PyTorch 2.7.x comes pre-installed in the base image
+# ============================================================
+
+# RunPod SDK
+runpod>=1.7.0
+
+# Core ML (transformers must be >= 4.52 for Gemma 3)
+transformers>=4.52.0
+safetensors>=0.4.0
+accelerate>=1.0.0
+einops>=0.8.0
+scipy>1.14
+
+# Audio/Video processing
+av>=12.0.0
+torchaudio
+
+# Image processing
+pillow>=10.0.0
+
+# Utilities
+tqdm>=4.66.0
+numpy>=1.26.0
+
+# HuggingFace model download
+huggingface_hub>=0.24.0
