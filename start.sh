@@ -154,6 +154,24 @@ export COMFYUI_WORKFLOWS_DIR="${WORKFLOWS_DIR}"
 export HF_HOME="${HF_HOME:-${HF_CACHE_DIR}}"
 mkdir -p "${HF_HOME}"
 
+ensure_placeholder_video() {
+  local placeholder="${COMFYUI_INPUT_DIR}/LTX-2_V2V_00014-audio.mp4"
+  if [ -f "${placeholder}" ]; then
+    return 0
+  fi
+
+  echo "[entrypoint] creating placeholder video input: $(basename "${placeholder}")"
+  ffmpeg -hide_banner -loglevel error \
+    -f lavfi -i color=c=black:s=64x64:d=1 \
+    -f lavfi -i anullsrc=r=44100:cl=mono \
+    -shortest \
+    -c:v libx264 -pix_fmt yuv420p \
+    -c:a aac -b:a 64k \
+    "${placeholder}" || true
+}
+
+ensure_placeholder_video
+
 if [ -d "${LTX2_HOME}/workflows" ] && compgen -G "${LTX2_HOME}/workflows/*.json" > /dev/null; then
   cp -n "${LTX2_HOME}"/workflows/*.json "${COMFYUI_WORKFLOWS_DIR}/" 2>/dev/null || true
 fi

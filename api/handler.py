@@ -84,6 +84,20 @@ UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
     "ImageScaleBy": ["upscale_method", "scale_by"],
     # SaveVideo node widgets map to filename/format/codec
     "SaveVideo": ["filename_prefix", "format", "codec"],
+    # LTX workflow nodes whose required fields are widget-only in UI exports
+    "LowVRAMCheckpointLoader": ["ckpt_name"],
+    "LTXICLoRALoaderModelOnly": ["lora_name", "strength_model"],
+    "Canny": ["low_threshold", "high_threshold"],
+    "EmptyLTXVLatentVideo": ["width", "height", "length", "batch_size"],
+    "LTXAddVideoICLoRAGuide": [
+        "frame_idx",
+        "strength",
+        "latent_downscale_factor",
+        "crop",
+        "use_tiled_encode",
+        "tile_size",
+        "tile_overlap",
+    ],
 }
 
 
