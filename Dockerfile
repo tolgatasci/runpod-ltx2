@@ -9,6 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MODELS_AUTO_DOWNLOAD=true \
     DOWNLOAD_ONCE=true \
     REQUIRE_ALL_MODELS=false \
+    RUNPOD_SERVERLESS=false \
     HF_HUB_ENABLE_HF_TRANSFER=1
 
 WORKDIR /
@@ -49,6 +50,7 @@ RUN python3 -m pip install -r ${LTX2_HOME}/requirements.txt
 
 COPY workflows ${LTX2_HOME}/workflows
 COPY scripts ${LTX2_HOME}/scripts
+COPY api ${LTX2_HOME}/api
 COPY start.sh /start.sh
 
 RUN chmod +x /start.sh ${LTX2_HOME}/scripts/download_models.sh

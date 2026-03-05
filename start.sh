@@ -73,9 +73,43 @@ else
   echo "[entrypoint] MODELS_AUTO_DOWNLOAD=false, skipping model bootstrap."
 fi
 
+COMFY_ARGS=(
+  --listen "${COMFYUI_LISTEN:-0.0.0.0}"
+  --port "${COMFYUI_PORT:-8188}"
+  --highvram
+)
+
+start_comfyui_background() {
+  cd "${COMFYUI_DIR}"
+  python3 main.py "${COMFY_ARGS[@]}" &
+  COMFYUI_PID=$!
+  echo "[entrypoint] ComfyUI started in background (pid=${COMFYUI_PID})"
+}
+
+wait_for_comfyui() {
+  local health_url="http://127.0.0.1:${COMFYUI_PORT:-8188}/"
+  local retries="${COMFYUI_HEALTH_RETRIES:-120}"
+  local sleep_s="${COMFYUI_HEALTH_SLEEP_SECONDS:-2}"
+  local i
+  for ((i=1; i<=retries; i++)); do
+    if curl -fsS "${health_url}" >/dev/null 2>&1; then
+      echo "[entrypoint] ComfyUI is ready."
+      return 0
+    fi
+    sleep "${sleep_s}"
+  done
+  echo "[entrypoint] ComfyUI did not become healthy in time." >&2
+  return 1
+}
+
+if [ "${RUNPOD_SERVERLESS:-false}" = "true" ]; then
+  echo "[entrypoint] RUNPOD_SERVERLESS=true, starting worker mode."
+  start_comfyui_background
+  wait_for_comfyui
+  cd "${LTX2_HOME}"
+  exec python3 -m api.worker_entry
+fi
+
 echo "[entrypoint] starting ComfyUI on ${COMFYUI_LISTEN:-0.0.0.0}:${COMFYUI_PORT:-8188}"
 cd "${COMFYUI_DIR}"
-exec python3 main.py \
-  --listen "${COMFYUI_LISTEN:-0.0.0.0}" \
-  --port "${COMFYUI_PORT:-8188}" \
-  --highvram
+exec python3 main.py "${COMFY_ARGS[@]}"

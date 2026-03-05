@@ -39,6 +39,9 @@ ltx2-runpod-docker/
 │   └── cinematic_i2v.json
 ├── scripts/
 │   └── download_models.sh
+├── api/
+│   ├── handler.py
+│   └── worker_entry.py
 ├── docker-compose.yml
 └── README.md
 ```
@@ -123,4 +126,52 @@ Not: LTX-2 tarafinda width/height degerleri 32'ye bolunebilir tutulmali.
 
 ## API (opsiyonel)
 
-`requirements.txt` icinde `runpod` paketi ekli. Sonraki adimda serverless worker endpoint (`text-to-video`, `image-to-video`, `seed`, `fps`, `duration`) eklenebilir.
+Repo icinde serverless worker hazir:
+
+- `api/handler.py`
+- `api/worker_entry.py`
+
+Serverless mod acmak icin env:
+
+```bash
+RUNPOD_SERVERLESS=true
+```
+
+Bu modda worker request uzerinden kalite ayarlarini degistirebilirsin:
+
+- `duration_seconds` (otomatik `frames` hesaplar)
+- `fps`
+- `steps`
+- `seed`
+- `width`, `height`
+- `cfg`, `denoise`
+- `positive_prompt`, `negative_prompt`
+- `node_overrides` (node bazli net kontrol)
+
+Ornek RunPod request payload:
+
+```json
+{
+  "input": {
+    "prompt": {
+      "3": {
+        "class_type": "KSampler",
+        "inputs": {
+          "steps": 16,
+          "cfg": 3.5,
+          "seed": 12345
+        }
+      }
+    },
+    "duration_seconds": 6.5,
+    "fps": 24,
+    "steps": 28,
+    "seed": 987654321,
+    "width": 1920,
+    "height": 1080,
+    "wait": true
+  }
+}
+```
+
+Not: `workflows/*.json` dosyalari ComfyUI UI formatindadir (`nodes`). Worker, API format prompt bekler (`class_type` + `inputs`). API format graph'i ComfyUI'dan `Save (API Format)` ile alip request'te `prompt` olarak gonderebilirsin.
