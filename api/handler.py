@@ -712,15 +712,8 @@ def _available_text_encoder_model_names() -> list[str]:
     if not root.exists() or not root.is_dir():
         return []
 
-    discovered: list[str] = []
-    seen: set[str] = set()
-    for file_path in sorted(root.rglob("*.safetensors")):
-        candidate = file_path.name
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        discovered.append(candidate)
-    return discovered
+    # ComfyUI-LTX loader expects the selectable file list under text_encoders root.
+    return sorted(path.name for path in root.glob("*.safetensors") if path.is_file())
 
 
 def _resolve_gemma_model_filename() -> str:
@@ -731,7 +724,6 @@ def _resolve_gemma_model_filename() -> str:
         configured,
         LEGACY_GEMMA_MODEL_FILENAME,
         DEFAULT_GEMMA_MODEL_FILENAME,
-        "model.safetensors",
     ]
 
     for candidate in preferred:
@@ -835,7 +827,7 @@ def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
             decode_defaults = {
                 "spatial_tiles": 4,
                 "temporal_tile_length": 4,
-                "spatial_overlap": 16,
+                "spatial_overlap": 8,
                 "temporal_overlap": 4,
                 "last_frame_fix": False,
                 "working_device": "auto",
@@ -852,6 +844,23 @@ def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
                         "old": None,
                         "new": default_value,
                         "source": "compat_missing_input",
+                    }
+                )
+
+            # Newer node versions cap spatial_overlap at 8.
+            try:
+                overlap_value = int(inputs.get("spatial_overlap"))
+            except (TypeError, ValueError):
+                overlap_value = None
+            if overlap_value is not None and overlap_value > 8:
+                inputs["spatial_overlap"] = 8
+                patched.append(
+                    {
+                        "node_id": node_id,
+                        "input": "spatial_overlap",
+                        "old": overlap_value,
+                        "new": 8,
+                        "source": "compat_clamp",
                     }
                 )
 

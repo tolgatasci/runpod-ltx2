@@ -1,4 +1,7 @@
 huggingface_hub[hf_transfer]>=0.30.0
 hf_transfer>=0.1.9
+protobuf>=4.25.3,<6
 requests>=2.31.0
 runpod>=1.7.0
+sentencepiece>=0.2.0
+tiktoken>=0.7.0

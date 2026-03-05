@@ -4,6 +4,7 @@ set -euo pipefail
 COMFYUI_DIR="${COMFYUI_DIR:-/ComfyUI}"
 MODEL_ROOT="${COMFYUI_MODELS_DIR:-${COMFYUI_DIR}/models}"
 MARKER_FILE="${MODEL_ROOT}/.ltx2_models_ready"
+SOURCE_MANIFEST_FILE="${MODEL_ROOT}/.ltx2_model_sources"
 DOWNLOAD_ONCE="${DOWNLOAD_ONCE:-true}"
 REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
@@ -31,30 +32,8 @@ ensure_gemma_compat_paths() {
 
 ensure_gemma_compat_paths
 
-if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
-  missing_required=0
-  for required in \
-    "${CHECKPOINT_PATH}" \
-    "${GEMMA_PRIMARY_PATH}" \
-    "${GEMMA_COMPAT_PATH}" \
-    "${GEMMA_TOKENIZER_PATH}" \
-    "${GEMMA_PREPROCESSOR_PATH}" \
-    "${SPATIAL_UPSCALER_PATH}" \
-    "${IC_LORA_PATH}"; do
-    if [ ! -f "${required}" ]; then
-      echo "[models] marker exists but required file is missing: ${required#${MODEL_ROOT}/}"
-      missing_required=1
-    fi
-  done
-
-  if [ "${missing_required}" -eq 1 ]; then
-    echo "[models] forcing model recheck."
-    rm -f "${MARKER_FILE}"
-  else
-    echo "[models] marker file exists, skipping download."
-    exit 0
-  fi
-fi
+FORCE_RECHECK=0
+FORCE_GEMMA_REFRESH=0
 
 fetch_http() {
   local source="$1"
@@ -204,6 +183,62 @@ MODEL_PATHS=(
   "loras/ltx-2-19b-lora-camera-control-static.safetensors"
 )
 
+write_source_manifest() {
+  local manifest_path="$1"
+  {
+    echo "GEMMA_MODEL_FILENAME=${GEMMA_MODEL_FILENAME:-}"
+    for key in "${MODEL_ENV_KEYS[@]}"; do
+      echo "${key}=${!key:-}"
+    done
+  } > "${manifest_path}"
+}
+
+source_manifest_matches_current() {
+  local tmp_file
+  tmp_file="$(mktemp)"
+  write_source_manifest "${tmp_file}"
+  if cmp -s "${SOURCE_MANIFEST_FILE}" "${tmp_file}"; then
+    rm -f "${tmp_file}"
+    return 0
+  fi
+  rm -f "${tmp_file}"
+  return 1
+}
+
+if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
+  missing_required=0
+  for required in \
+    "${CHECKPOINT_PATH}" \
+    "${GEMMA_PRIMARY_PATH}" \
+    "${GEMMA_COMPAT_PATH}" \
+    "${GEMMA_TOKENIZER_PATH}" \
+    "${GEMMA_PREPROCESSOR_PATH}" \
+    "${SPATIAL_UPSCALER_PATH}" \
+    "${IC_LORA_PATH}"; do
+    if [ ! -f "${required}" ]; then
+      echo "[models] marker exists but required file is missing: ${required#${MODEL_ROOT}/}"
+      missing_required=1
+    fi
+  done
+
+  if [ "${missing_required}" -eq 1 ]; then
+    echo "[models] forcing model recheck."
+    rm -f "${MARKER_FILE}"
+    FORCE_RECHECK=1
+  elif [ -f "${SOURCE_MANIFEST_FILE}" ]; then
+    if source_manifest_matches_current; then
+      echo "[models] marker file exists, skipping download."
+      exit 0
+    fi
+    echo "[models] model source config changed, refreshing cached models."
+    FORCE_RECHECK=1
+  else
+    # Old volume layout without source manifest: refresh only Gemma once.
+    echo "[models] source manifest missing, refreshing Gemma text encoder once."
+    FORCE_GEMMA_REFRESH=1
+  fi
+fi
+
 missing=0
 failed=0
 
@@ -216,10 +251,20 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
 
   mkdir -p "$(dirname "${destination}")"
 
+  refresh_this_model=0
+  if [ "${FORCE_RECHECK}" -eq 1 ]; then
+    refresh_this_model=1
+  elif [ "${FORCE_GEMMA_REFRESH}" -eq 1 ] && [ "${env_key}" = "GEMMA_TEXT_ENCODER_SOURCE" ]; then
+    refresh_this_model=1
+  fi
+
   if [ "${env_key}" = "GEMMA_TEXT_ENCODER_SOURCE" ] && [[ "${source}" =~ ^hf://[^/]+/[^/]+/?$ ]]; then
-    if [ -f "${destination}" ]; then
+    if [ -f "${destination}" ] && [ "${refresh_this_model}" -eq 0 ]; then
       echo "[models] exists: ${relative_path}"
       continue
+    fi
+    if [ "${refresh_this_model}" -eq 1 ]; then
+      rm -f "${destination}"
     fi
     echo "[models] downloading ${model_label} bundle -> $(dirname "${relative_path}")"
     if ! fetch_hf_repo "${source}" "$(dirname "${destination}")"; then
@@ -229,7 +274,7 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
     continue
   fi
 
-  if [ -f "${destination}" ]; then
+  if [ -f "${destination}" ] && [ "${refresh_this_model}" -eq 0 ]; then
     echo "[models] exists: ${relative_path}"
     continue
   fi
@@ -240,7 +285,12 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
     continue
   fi
 
-  echo "[models] downloading ${model_label} -> ${relative_path}"
+  if [ -f "${destination}" ] && [ "${refresh_this_model}" -eq 1 ]; then
+    rm -f "${destination}"
+    echo "[models] refreshing ${model_label} -> ${relative_path}"
+  else
+    echo "[models] downloading ${model_label} -> ${relative_path}"
+  fi
   if ! fetch_model "${source}" "${destination}"; then
     echo "[models] failed to download ${model_label}" >&2
     rm -f "${destination}"
@@ -262,6 +312,7 @@ fi
 
 if [ "${missing}" -eq 0 ] && [ "${failed}" -eq 0 ] && [ "${DOWNLOAD_ONCE}" = "true" ]; then
   touch "${MARKER_FILE}"
+  write_source_manifest "${SOURCE_MANIFEST_FILE}"
   echo "[models] all configured models are ready."
 else
   echo "[models] completed with missing=${missing}, failed=${failed}."
