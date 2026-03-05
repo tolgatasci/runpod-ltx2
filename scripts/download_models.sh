@@ -88,7 +88,20 @@ token = os.environ.get("HF_TOKEN")
 
 local_path = hf_hub_download(repo_id=repo_id, filename=filename, token=token)
 os.makedirs(out_dir, exist_ok=True)
-shutil.copy2(local_path, os.path.join(out_dir, out_name))
+dst_path = os.path.join(out_dir, out_name)
+
+if os.path.exists(dst_path):
+    os.remove(dst_path)
+
+try:
+    os.link(local_path, dst_path)
+except OSError:
+    # Cross-device or fs restrictions: try symlink before full copy.
+    try:
+        rel_src = os.path.relpath(local_path, out_dir)
+        os.symlink(rel_src, dst_path)
+    except OSError:
+        shutil.copy2(local_path, dst_path)
 PY
 }
 
