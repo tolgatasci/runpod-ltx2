@@ -50,6 +50,356 @@ PROMPT_ALIASES = {
 
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 
+UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
+UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
+UI_WORKFLOW_OUTPUT_TYPES = {"SaveVideo", "SaveImage", "PreviewImage", "SaveAudio"}
+UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
+    # Core image/video loaders
+    "LoadImage": ["image"],
+    "LoadVideo": ["file"],
+    # Primitive nodes from comfy_extras/nodes_primitive.py
+    "PrimitiveString": ["value"],
+    "PrimitiveStringMultiline": ["value"],
+    "PrimitiveInt": ["value", "control_after_generate"],
+    "PrimitiveFloat": ["value"],
+    "PrimitiveBoolean": ["value"],
+    # Custom sampler / sigma nodes
+    "KSamplerSelect": ["sampler_name"],
+    "RandomNoise": ["noise_seed", "control_after_generate"],
+    "ManualSigmas": ["sigmas"],
+    # LTX-specific loader
+    "LTXVGemmaCLIPModelLoader": ["gemma_path", "ltxv_path", "max_length"],
+}
+
+
+def _normalize_ui_links(links: Any) -> list[dict[str, int]]:
+    normalized: list[dict[str, int]] = []
+    if not isinstance(links, list):
+        return normalized
+
+    for link in links:
+        if isinstance(link, dict):
+            try:
+                normalized.append(
+                    {
+                        "id": int(link["id"]),
+                        "origin_id": int(link["origin_id"]),
+                        "origin_slot": int(link["origin_slot"]),
+                        "target_id": int(link["target_id"]),
+                        "target_slot": int(link["target_slot"]),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            continue
+
+        if isinstance(link, list) and len(link) >= 5:
+            try:
+                normalized.append(
+                    {
+                        "id": int(link[0]),
+                        "origin_id": int(link[1]),
+                        "origin_slot": int(link[2]),
+                        "target_id": int(link[3]),
+                        "target_slot": int(link[4]),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+
+    return normalized
+
+
+def _node_input_name_by_slot(node: dict[str, Any] | None, slot_idx: int) -> str | None:
+    if not isinstance(node, dict):
+        return None
+    inputs = node.get("inputs")
+    if not isinstance(inputs, list) or not (0 <= slot_idx < len(inputs)):
+        return None
+    slot = inputs[slot_idx]
+    if not isinstance(slot, dict):
+        return None
+    name = slot.get("name")
+    if isinstance(name, str) and name:
+        return name
+    return None
+
+
+def _widget_map_from_ui_node(node: dict[str, Any]) -> dict[str, Any]:
+    values = node.get("widgets_values")
+    if not isinstance(values, list) or not values:
+        return {}
+
+    mapping: dict[str, Any] = {}
+
+    proxy_widgets = ((node.get("properties") or {}).get("proxyWidgets") or [])
+    if isinstance(proxy_widgets, list) and proxy_widgets:
+        for idx, item in enumerate(proxy_widgets):
+            if idx >= len(values):
+                break
+            if not isinstance(item, list) or len(item) < 2:
+                continue
+            key = item[1]
+            if not isinstance(key, str) or not key:
+                continue
+            if ": " in key:
+                # Keys can be stored as "<node_id>: <input_name>".
+                key = key.split(": ", 1)[1]
+            mapping[key] = values[idx]
+
+    explicit_widget_names: list[str] = []
+    for slot in node.get("inputs") or []:
+        if not isinstance(slot, dict):
+            continue
+        widget = slot.get("widget")
+        if not isinstance(widget, dict):
+            continue
+        name = widget.get("name")
+        if isinstance(name, str) and name:
+            explicit_widget_names.append(name)
+
+    for idx, name in enumerate(explicit_widget_names):
+        if idx >= len(values):
+            break
+        mapping.setdefault(name, values[idx])
+
+    fallback_names = UI_WIDGET_INPUT_FALLBACKS.get(str(node.get("type")), [])
+    for idx, name in enumerate(fallback_names):
+        if idx >= len(values):
+            break
+        mapping.setdefault(name, values[idx])
+
+    return mapping
+
+
+def _collect_subgraphs(ui_workflow: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    definitions = ui_workflow.get("definitions", {})
+    if not isinstance(definitions, dict):
+        return {}
+
+    raw_subgraphs = definitions.get("subgraphs")
+    if isinstance(raw_subgraphs, list):
+        iterable = raw_subgraphs
+    elif isinstance(raw_subgraphs, dict):
+        iterable = raw_subgraphs.values()
+    else:
+        iterable = []
+
+    collected: dict[str, dict[str, Any]] = {}
+    for subgraph in iterable:
+        if not isinstance(subgraph, dict):
+            continue
+        subgraph_id = subgraph.get("id")
+        if isinstance(subgraph_id, str) and subgraph_id:
+            collected[subgraph_id] = subgraph
+    return collected
+
+
+def _new_expanded_state() -> dict[str, Any]:
+    return {
+        "nodes": {},
+        "edges": [],
+        "input_endpoints": {},
+        "output_endpoints": {},
+        "const_assignments": [],
+    }
+
+
+def _append_slot_endpoint(slot_map: dict[int, list[tuple[str, int]]], slot: int, endpoint: tuple[str, int]) -> None:
+    slot_map.setdefault(slot, []).append(endpoint)
+
+
+def _expand_ui_graph(
+    graph: dict[str, Any],
+    subgraphs: dict[str, dict[str, Any]],
+    prefix: str = "",
+) -> dict[str, Any]:
+    state = _new_expanded_state()
+
+    raw_nodes = [node for node in (graph.get("nodes") or []) if isinstance(node, dict)]
+    links = _normalize_ui_links(graph.get("links"))
+
+    regular_nodes: dict[int, dict[str, Any]] = {}
+    wrapper_nodes: dict[int, dict[str, Any]] = {}
+
+    for node in raw_nodes:
+        try:
+            node_id = int(node.get("id"))
+        except (TypeError, ValueError):
+            continue
+
+        mode = int(node.get("mode", 0) or 0)
+        if mode in UI_WORKFLOW_SKIP_MODES:
+            continue
+
+        node_type = node.get("type")
+        if not isinstance(node_type, str) or not node_type:
+            continue
+        if node_type in UI_WORKFLOW_SKIP_TYPES:
+            continue
+
+        if node_type in subgraphs:
+            wrapper_nodes[node_id] = node
+        else:
+            regular_nodes[node_id] = node
+            state["nodes"][f"{prefix}{node_id}"] = node
+
+    wrapper_expansions: dict[int, dict[str, Any]] = {}
+    for wrapper_id, wrapper_node in wrapper_nodes.items():
+        subgraph = subgraphs[wrapper_node["type"]]
+        child_prefix = f"{prefix}{wrapper_id}:"
+        child_state = _expand_ui_graph(subgraph, subgraphs, child_prefix)
+        wrapper_expansions[wrapper_id] = child_state
+
+        state["nodes"].update(child_state["nodes"])
+        state["edges"].extend(child_state["edges"])
+        state["const_assignments"].extend(child_state["const_assignments"])
+
+        widget_map = _widget_map_from_ui_node(wrapper_node)
+        subgraph_inputs = subgraph.get("inputs")
+        if isinstance(subgraph_inputs, list):
+            for slot_idx, subgraph_input in enumerate(subgraph_inputs):
+                if not isinstance(subgraph_input, dict):
+                    continue
+                name = subgraph_input.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                if name not in widget_map:
+                    continue
+                value = widget_map[name]
+                if value is None:
+                    continue
+                for endpoint in child_state["input_endpoints"].get(slot_idx, []):
+                    target_node_id, target_slot = endpoint
+                    state["const_assignments"].append((target_node_id, target_slot, value))
+
+    def resolve_origin(local_node_id: int, origin_slot: int) -> list[tuple[str, int]]:
+        if local_node_id == -10:
+            return [("__IN__", origin_slot)]
+        if local_node_id in wrapper_expansions:
+            return wrapper_expansions[local_node_id]["output_endpoints"].get(origin_slot, [])
+        if local_node_id in regular_nodes:
+            return [(f"{prefix}{local_node_id}", origin_slot)]
+        return []
+
+    def resolve_target(local_node_id: int, target_slot: int) -> list[tuple[str, int]]:
+        if local_node_id == -20:
+            return [("__OUT__", target_slot)]
+        if local_node_id in wrapper_expansions:
+            return wrapper_expansions[local_node_id]["input_endpoints"].get(target_slot, [])
+        if local_node_id in regular_nodes:
+            return [(f"{prefix}{local_node_id}", target_slot)]
+        return []
+
+    for link in links:
+        origins = resolve_origin(link["origin_id"], link["origin_slot"])
+        targets = resolve_target(link["target_id"], link["target_slot"])
+        for origin_node_id, origin_slot in origins:
+            for target_node_id, target_slot in targets:
+                if origin_node_id == "__IN__" and target_node_id == "__OUT__":
+                    continue
+                if origin_node_id == "__IN__":
+                    _append_slot_endpoint(state["input_endpoints"], origin_slot, (target_node_id, target_slot))
+                elif target_node_id == "__OUT__":
+                    _append_slot_endpoint(state["output_endpoints"], target_slot, (origin_node_id, origin_slot))
+                else:
+                    state["edges"].append((origin_node_id, origin_slot, target_node_id, target_slot))
+
+    return state
+
+
+def _convert_ui_workflow_to_api_prompt(ui_workflow: dict[str, Any]) -> dict[str, Any]:
+    subgraphs = _collect_subgraphs(ui_workflow)
+    expanded = _expand_ui_graph(ui_workflow, subgraphs, prefix="")
+
+    node_inputs: dict[str, dict[str, Any]] = {}
+    for node_id, node in expanded["nodes"].items():
+        input_map: dict[str, Any] = {}
+        for key, value in _widget_map_from_ui_node(node).items():
+            if value is None:
+                continue
+            if "control_after_generate" in key:
+                continue
+            input_map[key] = value
+        node_inputs[node_id] = input_map
+
+    for target_node_id, target_slot, value in expanded["const_assignments"]:
+        if value is None:
+            continue
+        node = expanded["nodes"].get(target_node_id)
+        name = _node_input_name_by_slot(node, target_slot)
+        if not name or "control_after_generate" in name:
+            continue
+        node_inputs.setdefault(target_node_id, {})[name] = value
+
+    incoming: dict[str, list[str]] = {}
+    outgoing_count: dict[str, int] = {}
+    incoming_count: dict[str, int] = {}
+
+    for origin_node_id, origin_slot, target_node_id, target_slot in expanded["edges"]:
+        target_node = expanded["nodes"].get(target_node_id)
+        name = _node_input_name_by_slot(target_node, target_slot)
+        if not name:
+            continue
+        node_inputs.setdefault(target_node_id, {})[name] = [str(origin_node_id), int(origin_slot)]
+
+        incoming.setdefault(target_node_id, []).append(origin_node_id)
+        outgoing_count[origin_node_id] = outgoing_count.get(origin_node_id, 0) + 1
+        incoming_count[target_node_id] = incoming_count.get(target_node_id, 0) + 1
+
+    output_candidates: list[str] = []
+    for node in ui_workflow.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        try:
+            node_id = int(node.get("id"))
+        except (TypeError, ValueError):
+            continue
+        mode = int(node.get("mode", 0) or 0)
+        if mode in UI_WORKFLOW_SKIP_MODES:
+            continue
+        node_type = node.get("type")
+        if node_type in UI_WORKFLOW_OUTPUT_TYPES and isinstance(node_type, str):
+            output_candidates.append(str(node_id))
+
+    if not output_candidates:
+        for node_id in expanded["nodes"]:
+            if outgoing_count.get(node_id, 0) == 0 and incoming_count.get(node_id, 0) > 0:
+                output_candidates.append(node_id)
+
+    to_visit = list(output_candidates)
+    keep: set[str] = set()
+    while to_visit:
+        current = to_visit.pop()
+        if current in keep:
+            continue
+        if current not in expanded["nodes"]:
+            continue
+        keep.add(current)
+        to_visit.extend(incoming.get(current, []))
+
+    prompt: dict[str, Any] = {}
+    for node_id in sorted(keep, key=lambda value: (len(value), value)):
+        node = expanded["nodes"].get(node_id)
+        if not isinstance(node, dict):
+            continue
+        class_type = node.get("type")
+        if not isinstance(class_type, str) or not class_type:
+            continue
+        if class_type in UI_WORKFLOW_SKIP_TYPES:
+            continue
+        title = node.get("title") or class_type
+        prompt[node_id] = {
+            "class_type": class_type,
+            "inputs": node_inputs.get(node_id, {}),
+            "_meta": {"title": title},
+        }
+
+    if not prompt:
+        raise ValueError("UI workflow conversion produced an empty API prompt.")
+
+    return prompt
+
 
 def _event_input(event: Any) -> dict[str, Any]:
     if isinstance(event, dict) and isinstance(event.get("input"), dict):
@@ -413,7 +763,15 @@ def _submit_prompt(comfy_url: str, prompt: dict[str, Any], client_id: str) -> di
         json={"prompt": prompt, "client_id": client_id},
         timeout=DEFAULT_HTTP_TIMEOUT,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        detail = ""
+        try:
+            detail = json.dumps(response.json(), ensure_ascii=False)
+        except ValueError:
+            detail = response.text.strip()
+        if len(detail) > 2500:
+            detail = f"{detail[:2500]}...(truncated)"
+        raise RuntimeError(f"ComfyUI /prompt returned HTTP {response.status_code}: {detail or response.reason}")
     payload = response.json()
     if "prompt_id" not in payload:
         raise RuntimeError(f"Invalid ComfyUI response: {payload}")
@@ -549,9 +907,14 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         created_input_file = _materialize_input_image(req)
 
         prompt, prompt_source = _load_prompt_from_request(req)
+        prompt_format = "api"
 
         if _is_ui_workflow(prompt):
-            raise ValueError(_workflow_format_hint(prompt_source))
+            auto_convert_ui = _to_bool(req.get("auto_convert_ui"), True)
+            if not auto_convert_ui:
+                raise ValueError(_workflow_format_hint(prompt_source))
+            prompt = _convert_ui_workflow_to_api_prompt(prompt)
+            prompt_format = "ui_converted"
         if not _is_api_prompt(prompt):
             raise ValueError("Prompt graph is not valid ComfyUI API format.")
 
@@ -577,6 +940,8 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
                 "client_id": client_id,
                 "applied_overrides": patched,
                 "submit_response": submit_payload,
+                "prompt_source": prompt_source,
+                "prompt_format": prompt_format,
                 "note": "Job queued. Outputs/input cleanup runs after completion only when wait=true.",
             }
 
@@ -608,6 +973,8 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
             "prompt_id": prompt_id,
             "client_id": client_id,
             "applied_overrides": patched,
+            "prompt_source": prompt_source,
+            "prompt_format": prompt_format,
             "outputs": outputs,
             "cleanup": {
                 "outputs_deleted": outputs_deleted,

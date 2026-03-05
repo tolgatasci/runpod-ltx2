@@ -206,9 +206,11 @@ Ornek RunPod request payload:
 }
 ```
 
-Not: `workflows/*.json` dosyalari ComfyUI UI formatindadir (`nodes`). Worker, API format prompt bekler (`class_type` + `inputs`). API format graph'i ComfyUI'dan `Save (API Format)` ile alip request'te `prompt` olarak gonderebilirsin.
+Not: Worker artik UI workflow (`nodes`) geldiğinde default olarak API prompt'a otomatik cevirir (`auto_convert_ui=true` varsayilan).
 
-Alternatif: API graph'i dosyaya koyup `workflow_api` ile dogrudan path verebilirsin (ornek: `workflow_api=image_to_video.api.json`).
+- Dilersen bu davranisi kapatabilirsin: `auto_convert_ui=false`
+- Hala API graph vermek istersen `prompt` veya `workflow_api` kullanabilirsin (ornek: `workflow_api=image_to_video.api.json`).
+- ComfyUI `/prompt` 400 donerse hata detayi artik response icinde gorunur (node_errors dahil).
 
 Ek notlar:
 - `wait=true` iken job bitince output dosyalari default olarak silinir (`CLEANUP_JOB_OUTPUTS=true`).
