@@ -49,6 +49,8 @@ PROMPT_ALIASES = {
 }
 
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
+DEFAULT_LTXV_MODEL_FILENAME = "ltx2_19b_distilled_fp8.safetensors"
+DEFAULT_GEMMA_MODEL_FILENAME = "gemma_text_encoder.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
@@ -69,6 +71,19 @@ UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
     "ManualSigmas": ["sigmas"],
     # LTX-specific loader
     "LTXVGemmaCLIPModelLoader": ["gemma_path", "ltxv_path", "max_length"],
+    "LTXVGemmaEnhancePrompt": [
+        "prompt",
+        "system_prompt",
+        "max_tokens",
+        "bypass_i2v",
+        "seed",
+        "control_after_generate",
+    ],
+    # ComfyUI >=0.3 image scaling expects explicit upscale/crop options
+    "ImageScale": ["upscale_method", "width", "height", "crop"],
+    "ImageScaleBy": ["upscale_method", "scale_by"],
+    # SaveVideo node widgets map to filename/format/codec
+    "SaveVideo": ["filename_prefix", "format", "codec"],
 }
 
 
@@ -653,6 +668,44 @@ def _apply_node_overrides(prompt: dict[str, Any], node_overrides: Any) -> list[d
     return patched
 
 
+def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
+    patched: list[dict[str, Any]] = []
+    for node_id, inputs in _iter_node_inputs(prompt):
+        node_data = prompt.get(node_id)
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") != "LTXVGemmaCLIPModelLoader":
+            continue
+
+        if inputs.get("ltxv_path") != DEFAULT_LTXV_MODEL_FILENAME:
+            old_value = inputs.get("ltxv_path")
+            inputs["ltxv_path"] = DEFAULT_LTXV_MODEL_FILENAME
+            patched.append(
+                {
+                    "node_id": node_id,
+                    "input": "ltxv_path",
+                    "old": old_value,
+                    "new": DEFAULT_LTXV_MODEL_FILENAME,
+                    "source": "compat_model_name",
+                }
+            )
+
+        if inputs.get("gemma_path") != DEFAULT_GEMMA_MODEL_FILENAME:
+            old_value = inputs.get("gemma_path")
+            inputs["gemma_path"] = DEFAULT_GEMMA_MODEL_FILENAME
+            patched.append(
+                {
+                    "node_id": node_id,
+                    "input": "gemma_path",
+                    "old": old_value,
+                    "new": DEFAULT_GEMMA_MODEL_FILENAME,
+                    "source": "compat_model_name",
+                }
+            )
+
+    return patched
+
+
 def _safe_filename(filename: str) -> str:
     safe = Path(str(filename)).name.strip()
     if not safe or safe in {".", ".."}:
@@ -925,6 +978,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         patched.extend(_apply_param_aliases(prompt_graph, tuning_values))
         patched.extend(_apply_prompt_text(prompt_graph, req))
         patched.extend(_apply_input_image(prompt_graph, req))
+        patched.extend(_normalize_ltx_model_inputs(prompt_graph))
         patched.extend(_apply_node_overrides(prompt_graph, req.get("node_overrides")))
 
         client_id = str(req.get("client_id", uuid.uuid4()))
