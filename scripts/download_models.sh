@@ -83,17 +83,27 @@ local_path = hf_hub_download(repo_id=repo_id, filename=filename, token=token)
 os.makedirs(out_dir, exist_ok=True)
 dst_path = os.path.join(out_dir, out_name)
 
-if os.path.exists(dst_path):
-    os.remove(dst_path)
+def unlink_existing(path: str) -> None:
+    # Remove both regular files and dangling symlinks.
+    if not os.path.lexists(path):
+        return
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.unlink(path)
+
+unlink_existing(dst_path)
 
 try:
     os.link(local_path, dst_path)
 except OSError:
+    unlink_existing(dst_path)
     # Cross-device or fs restrictions: try symlink before full copy.
     try:
         rel_src = os.path.relpath(local_path, out_dir)
         os.symlink(rel_src, dst_path)
     except OSError:
+        unlink_existing(dst_path)
         shutil.copy2(local_path, dst_path)
 PY
 }
