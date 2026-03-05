@@ -10,7 +10,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOWNLOAD_ONCE=true \
     REQUIRE_ALL_MODELS=false \
     RUNPOD_SERVERLESS=false \
-    HF_HUB_ENABLE_HF_TRANSFER=1
+    HF_HUB_ENABLE_HF_TRANSFER=1 \
+    LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors \
+    GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors \
+    SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors \
+    TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors \
+    IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors \
+    CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/ltx-2-19b-lora-camera-control-static.safetensors
 
 WORKDIR /
 

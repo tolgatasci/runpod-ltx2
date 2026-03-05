@@ -60,12 +60,12 @@ cp .env.example .env
 
 ```bash
 HF_TOKEN=hf_xxx
-LTX2_MODEL_SOURCE=hf://org-or-user/repo/path/to/ltx2_model.safetensors
-GEMMA_TEXT_ENCODER_SOURCE=hf://org-or-user/repo/path/to/gemma_encoder.safetensors
-SPATIAL_UPSCALER_SOURCE=hf://org-or-user/repo/path/to/spatial_upscaler.safetensors
-TEMPORAL_UPSCALER_SOURCE=hf://org-or-user/repo/path/to/temporal_upscaler.safetensors
-IC_LORA_UNION_SOURCE=hf://org-or-user/repo/path/to/ic_lora_union.safetensors
-CAMERA_MOTION_LORA_SOURCE=hf://org-or-user/repo/path/to/camera_motion_lora.safetensors
+LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
+GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors
+SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
+TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors
+IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors
+CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/ltx-2-19b-lora-camera-control-static.safetensors
 ```
 
 Varsayilanlar otomatik gelir:
@@ -99,12 +99,12 @@ Onerilen ayarlar:
 RunPod `Environment Variables` alaninda sadece model kaynaklarini girmen yeterli:
 
 ```bash
-LTX2_MODEL_SOURCE=...
-GEMMA_TEXT_ENCODER_SOURCE=...
-SPATIAL_UPSCALER_SOURCE=...
-TEMPORAL_UPSCALER_SOURCE=...
-IC_LORA_UNION_SOURCE=...
-CAMERA_MOTION_LORA_SOURCE=...
+LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
+GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors
+SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
+TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors
+IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors
+CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/ltx-2-19b-lora-camera-control-static.safetensors
 ```
 
 Container ilk acilista model kaynaklari tanimliysa model bootstrap scripti indirir. Sonraki acilislarda model dosyalari ve marker (`.ltx2_models_ready`) network volume icinde kaldigi icin tekrar indirme yapmaz.
