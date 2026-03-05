@@ -53,6 +53,8 @@ INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 DEFAULT_LTXV_MODEL_FILENAME = "ltx-2-19b-distilled.safetensors"
 DEFAULT_GEMMA_MODEL_FILENAME = os.getenv("GEMMA_MODEL_FILENAME", "gemma_text_encoder.safetensors")
 LEGACY_GEMMA_MODEL_FILENAME = "gemma_text_encoder.safetensors"
+GEMMA_BUNDLE_SUBDIR = "gemma-3-12b-it-qat-q4_0-unquantized"
+GEMMA_COMPAT_MODEL_FILENAME = "model.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
@@ -716,7 +718,32 @@ def _available_text_encoder_model_names() -> list[str]:
     return sorted(path.name for path in root.glob("*.safetensors") if path.is_file())
 
 
-def _resolve_gemma_model_filename() -> str:
+def _ensure_gemma_compat_paths() -> None:
+    root = DEFAULT_MODELS_DIR / "text_encoders"
+    if not root.exists():
+        return
+
+    root.mkdir(parents=True, exist_ok=True)
+    primary = root / LEGACY_GEMMA_MODEL_FILENAME
+    compat_dir = root / GEMMA_BUNDLE_SUBDIR
+    compat = compat_dir / GEMMA_COMPAT_MODEL_FILENAME
+    compat_dir.mkdir(parents=True, exist_ok=True)
+
+    if primary.is_file() and not compat.exists():
+        try:
+            compat.symlink_to(Path("..") / LEGACY_GEMMA_MODEL_FILENAME)
+        except OSError:
+            pass
+
+    if compat.is_file() and not primary.exists():
+        try:
+            primary.symlink_to(Path(GEMMA_BUNDLE_SUBDIR) / GEMMA_COMPAT_MODEL_FILENAME)
+        except OSError:
+            pass
+
+
+def _resolve_gemma_model_filename() -> str | None:
+    _ensure_gemma_compat_paths()
     configured = os.getenv("GEMMA_MODEL_FILENAME", "").strip()
     available = _available_text_encoder_model_names()
 
@@ -730,6 +757,9 @@ def _resolve_gemma_model_filename() -> str:
         if not candidate:
             continue
         if not available or candidate in available:
+            candidate_path = DEFAULT_MODELS_DIR / "text_encoders" / candidate
+            if not available and not candidate_path.is_file():
+                continue
             return candidate
 
     if available:
@@ -738,7 +768,30 @@ def _resolve_gemma_model_filename() -> str:
                 return candidate
         return available[0]
 
-    return LEGACY_GEMMA_MODEL_FILENAME
+    return None
+
+
+def _assert_required_model_files() -> None:
+    missing: list[str] = []
+
+    checkpoint = DEFAULT_MODELS_DIR / "checkpoints" / DEFAULT_LTXV_MODEL_FILENAME
+    if not checkpoint.is_file():
+        missing.append(str(checkpoint))
+
+    gemma_name = _resolve_gemma_model_filename()
+    if not gemma_name:
+        missing.append(str(DEFAULT_MODELS_DIR / "text_encoders" / LEGACY_GEMMA_MODEL_FILENAME))
+    else:
+        gemma_path = DEFAULT_MODELS_DIR / "text_encoders" / gemma_name
+        if not gemma_path.is_file():
+            missing.append(str(gemma_path))
+
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            "Required model files are missing. "
+            f"Check auto-download + network volume mount. Missing: {joined}"
+        )
 
 
 def _history_execution_error(history_entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -777,7 +830,7 @@ def _raise_if_history_failed(history_entry: dict[str, Any]) -> None:
 
 def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
     patched: list[dict[str, Any]] = []
-    gemma_model_filename = _resolve_gemma_model_filename()
+    gemma_model_filename = _resolve_gemma_model_filename() or LEGACY_GEMMA_MODEL_FILENAME
     for node_id, inputs in _iter_node_inputs(prompt):
         node_data = prompt.get(node_id)
         if not isinstance(node_data, dict):
@@ -1141,6 +1194,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         patched.extend(_apply_input_image(prompt_graph, req))
         patched.extend(_normalize_ltx_model_inputs(prompt_graph))
         patched.extend(_apply_node_overrides(prompt_graph, req.get("node_overrides")))
+        _assert_required_model_files()
 
         client_id = str(req.get("client_id", uuid.uuid4()))
         submit_payload = _submit_prompt(comfy_url, prompt_graph, client_id)
