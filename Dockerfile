@@ -54,7 +54,8 @@ RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git ${COMFYUI_
 
 WORKDIR ${COMFYUI_DIR}
 
-RUN python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
+RUN sed -i 's/comfy-aimdo>=0.2.7/comfy-aimdo>=0.2.6,<0.2.7/g' requirements.txt \
+    && python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
     && python3 -m pip install -r requirements.txt
 
 RUN git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo custom_nodes/ComfyUI-LTXVideo \
