@@ -4,6 +4,7 @@ import copy
 import json
 import mimetypes
 import os
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -794,6 +795,38 @@ def _assert_required_model_files() -> None:
         )
 
 
+def _ensure_models_ready() -> None:
+    try:
+        _assert_required_model_files()
+        return
+    except RuntimeError as initial_error:
+        bootstrap_script = Path(os.getenv("LTX2_HOME", "/opt/ltx2")) / "scripts" / "download_models.sh"
+        if not bootstrap_script.is_file():
+            raise initial_error
+
+        try:
+            # Run one explicit bootstrap pass from handler path if startup bootstrap missed.
+            subprocess.run(
+                [str(bootstrap_script)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=float(os.getenv("MODEL_BOOTSTRAP_TIMEOUT_SECONDS", "3600")),
+            )
+        except subprocess.CalledProcessError as exc:
+            output = (exc.stdout or "").strip()
+            tail = output[-1200:] if output else ""
+            if tail:
+                raise RuntimeError(f"{initial_error} | bootstrap_failed: {tail}") from exc
+            raise RuntimeError(f"{initial_error} | bootstrap_failed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{initial_error} | bootstrap_timeout") from exc
+
+        # Re-check after bootstrap attempt.
+        _assert_required_model_files()
+
+
 def _history_execution_error(history_entry: dict[str, Any]) -> dict[str, Any] | None:
     status = history_entry.get("status")
     if not isinstance(status, dict):
@@ -1194,7 +1227,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         patched.extend(_apply_input_image(prompt_graph, req))
         patched.extend(_normalize_ltx_model_inputs(prompt_graph))
         patched.extend(_apply_node_overrides(prompt_graph, req.get("node_overrides")))
-        _assert_required_model_files()
+        _ensure_models_ready()
 
         client_id = str(req.get("client_id", uuid.uuid4()))
         submit_payload = _submit_prompt(comfy_url, prompt_graph, client_id)
