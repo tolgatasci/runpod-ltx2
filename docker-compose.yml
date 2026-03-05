@@ -2,7 +2,7 @@ services:
   comfyui-ltx2:
     build:
       context: .
-    image: ghcr.io/your_github/ltx2-runpod:latest
+    image: ${IMAGE_NAME:-ghcr.io/tolgatasci/runpod-ltx2:latest}
     container_name: comfyui-ltx2
     gpus: all
     ports:

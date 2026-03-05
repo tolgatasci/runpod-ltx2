@@ -97,7 +97,7 @@ docker compose up --build
 
 Onerilen ayarlar:
 
-- Image: `ghcr.io/YOUR_GITHUB/ltx2-runpod:latest`
+- Image: `ghcr.io/tolgatasci/runpod-ltx2:latest`
 - GPU: `A100 80GB` veya `H100`
 - Disk: `150GB`
 - Exposed Port: `8188`
@@ -117,6 +117,26 @@ CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/l
 Container ilk acilista model kaynaklari tanimliysa model bootstrap scripti indirir. Sonraki acilislarda model dosyalari ve marker (`.ltx2_models_ready`) network volume icinde kaldigi icin tekrar indirme yapmaz.
 
 Default davranis: network volume'da sadece modeller ve HF cache kalici tutulur. `input/output/workflow` klasorleri runtime storage'da acilir ve otomatik prune/cleanup ile temizlenir.
+
+## GitHub Build (GHCR)
+
+Repo icinde otomatik Docker build workflow'u var:
+
+- `.github/workflows/docker-image.yml`
+
+Tetikleme:
+
+- `main` branch'e push
+- `v*` tag push
+- manuel (`workflow_dispatch`)
+
+Olusan image tag'leri:
+
+- `ghcr.io/tolgatasci/runpod-ltx2:latest` (default branch)
+- `ghcr.io/tolgatasci/runpod-ltx2:main`
+- `ghcr.io/tolgatasci/runpod-ltx2:sha-<commit>`
+
+RunPod'da direkt bu image'i kullanabilirsin. Eger GHCR package private ise package visibility'yi `public` yapman veya RunPod'a pull auth vermen gerekir.
 
 ## Yatay / dikey cikis
 
