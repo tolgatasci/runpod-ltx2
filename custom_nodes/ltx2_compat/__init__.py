@@ -11,8 +11,8 @@ class InversionDemoLazySwitch:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "on_false": (ANY_TYPE, {"forceInput": True}),
-                "on_true": (ANY_TYPE, {"forceInput": True}),
+                "on_false": (ANY_TYPE, {"forceInput": True, "lazy": True}),
+                "on_true": (ANY_TYPE, {"forceInput": True, "lazy": True}),
                 "switch": ("BOOLEAN", {"default": False}),
             }
         }
@@ -21,6 +21,14 @@ class InversionDemoLazySwitch:
     RETURN_NAMES = ("*",)
     FUNCTION = "pick"
     CATEGORY = "LTX2/Compat"
+
+    @classmethod
+    def check_lazy_status(cls, on_false=None, on_true=None, switch=False):
+        if switch and on_true is None:
+            return ["on_true"]
+        if not switch and on_false is None:
+            return ["on_false"]
+        return []
 
     def pick(self, on_false, on_true, switch):
         return (on_true if switch else on_false,)
