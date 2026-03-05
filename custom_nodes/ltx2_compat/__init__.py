@@ -26,10 +26,30 @@ class InversionDemoLazySwitch:
         return (on_true if switch else on_false,)
 
 
+class CM_FloatToInt:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "a": ("FLOAT", {"default": 0.0}),
+            }
+        }
+
+    RETURN_TYPES = ("INT",)
+    RETURN_NAMES = ("INT",)
+    FUNCTION = "convert"
+    CATEGORY = "LTX2/Compat"
+
+    def convert(self, a):
+        return (int(round(float(a))),)
+
+
 NODE_CLASS_MAPPINGS = {
     "InversionDemoLazySwitch": InversionDemoLazySwitch,
+    "CM_FloatToInt": CM_FloatToInt,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InversionDemoLazySwitch": "Bypass Enhancer Switch",
+    "CM_FloatToInt": "Float To Int (Compat)",
 }
