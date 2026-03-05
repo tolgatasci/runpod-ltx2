@@ -217,7 +217,10 @@ Ornek RunPod request payload:
 }
 ```
 
-Not: Worker artik UI workflow (`nodes`) geldiğinde default olarak API prompt'a otomatik cevirir (`auto_convert_ui=true` varsayilan).
+Not: `workflows/*.api.json` dosyalari artik repo icinde hazir gelir ve default olarak bunlar tercih edilir.
+Boylece runtime'da UI->API conversion ihtiyaci ortadan kalkar.
+
+Not: Worker UI workflow (`nodes`) gelirse yine otomatik API prompt'a cevirebilir (`auto_convert_ui=true` varsayilan).
 
 - Dilersen bu davranisi kapatabilirsin: `auto_convert_ui=false`
 - Hala API graph vermek istersen `prompt` veya `workflow_api` kullanabilirsin (ornek: `workflow_api=image_to_video.api.json`).
