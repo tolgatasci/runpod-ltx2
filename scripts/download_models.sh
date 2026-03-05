@@ -8,13 +8,37 @@ DOWNLOAD_ONCE="${DOWNLOAD_ONCE:-true}"
 REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
-
-if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
-  echo "[models] marker file exists, skipping download."
-  exit 0
-fi
+GEMMA_CANONICAL_PATH="${MODEL_ROOT}/text_encoders/model.safetensors"
+GEMMA_LEGACY_PATH="${MODEL_ROOT}/text_encoders/model-00001-of-00001.safetensors"
 
 mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,loras,controlnet}
+
+ensure_gemma_compat() {
+  if [ -f "${GEMMA_CANONICAL_PATH}" ]; then
+    return 0
+  fi
+  if [ ! -f "${GEMMA_LEGACY_PATH}" ]; then
+    return 0
+  fi
+
+  echo "[models] creating Gemma compatibility alias model.safetensors"
+  (
+    cd "$(dirname "${GEMMA_CANONICAL_PATH}")"
+    ln -sf "$(basename "${GEMMA_LEGACY_PATH}")" "$(basename "${GEMMA_CANONICAL_PATH}")"
+  ) || cp -f "${GEMMA_LEGACY_PATH}" "${GEMMA_CANONICAL_PATH}"
+}
+
+ensure_gemma_compat
+
+if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
+  if [ ! -f "${GEMMA_CANONICAL_PATH}" ]; then
+    echo "[models] marker exists but Gemma canonical file is missing, forcing model check."
+    rm -f "${MARKER_FILE}"
+  else
+    echo "[models] marker file exists, skipping download."
+    exit 0
+  fi
+fi
 
 fetch_http() {
   local source="$1"
@@ -106,7 +130,7 @@ MODEL_ENV_KEYS=(
 
 MODEL_PATHS=(
   "checkpoints/ltx2_19b_distilled_fp8.safetensors"
-  "text_encoders/model-00001-of-00001.safetensors"
+  "text_encoders/model.safetensors"
   "tokenizer/tokenizer.model"
   "tokenizer/preprocessor_config.json"
   "upscale_models/spatial_upscaler_x2.safetensors"

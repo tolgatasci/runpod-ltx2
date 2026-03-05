@@ -50,7 +50,7 @@ PROMPT_ALIASES = {
 
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 DEFAULT_LTXV_MODEL_FILENAME = "ltx2_19b_distilled_fp8.safetensors"
-DEFAULT_GEMMA_MODEL_FILENAME = "model-00001-of-00001.safetensors"
+DEFAULT_GEMMA_MODEL_FILENAME = "model.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
