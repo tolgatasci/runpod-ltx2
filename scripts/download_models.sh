@@ -86,6 +86,7 @@ MODEL_LABELS=(
   "LTX-2 19B distilled fp8"
   "Gemma text encoder"
   "Gemma tokenizer"
+  "Gemma preprocessor config"
   "Spatial upscaler"
   "Temporal upscaler"
   "IC-LoRA union control"
@@ -96,6 +97,7 @@ MODEL_ENV_KEYS=(
   "LTX2_MODEL_SOURCE"
   "GEMMA_TEXT_ENCODER_SOURCE"
   "GEMMA_TOKENIZER_SOURCE"
+  "GEMMA_PREPROCESSOR_SOURCE"
   "SPATIAL_UPSCALER_SOURCE"
   "TEMPORAL_UPSCALER_SOURCE"
   "IC_LORA_UNION_SOURCE"
@@ -104,8 +106,9 @@ MODEL_ENV_KEYS=(
 
 MODEL_PATHS=(
   "checkpoints/ltx2_19b_distilled_fp8.safetensors"
-  "text_encoders/gemma_text_encoder.safetensors"
+  "text_encoders/model-00001-of-00001.safetensors"
   "tokenizer/tokenizer.model"
+  "tokenizer/preprocessor_config.json"
   "upscale_models/spatial_upscaler_x2.safetensors"
   "upscale_models/temporal_upscaler_x2.safetensors"
   "controlnet/ic_lora_union.safetensors"
