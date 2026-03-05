@@ -8,31 +8,14 @@ DOWNLOAD_ONCE="${DOWNLOAD_ONCE:-true}"
 REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
-GEMMA_CANONICAL_PATH="${MODEL_ROOT}/text_encoders/model.safetensors"
-GEMMA_LEGACY_PATH="${MODEL_ROOT}/text_encoders/model-00001-of-00001.safetensors"
+GEMMA_BUNDLE_DIR="${MODEL_ROOT}/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
+GEMMA_PRIMARY_PATH="${GEMMA_BUNDLE_DIR}/model-00001-of-00005.safetensors"
 
 mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,loras,controlnet}
 
-ensure_gemma_compat() {
-  if [ -f "${GEMMA_CANONICAL_PATH}" ]; then
-    return 0
-  fi
-  if [ ! -f "${GEMMA_LEGACY_PATH}" ]; then
-    return 0
-  fi
-
-  echo "[models] creating Gemma compatibility alias model.safetensors"
-  (
-    cd "$(dirname "${GEMMA_CANONICAL_PATH}")"
-    ln -sf "$(basename "${GEMMA_LEGACY_PATH}")" "$(basename "${GEMMA_CANONICAL_PATH}")"
-  ) || cp -f "${GEMMA_LEGACY_PATH}" "${GEMMA_CANONICAL_PATH}"
-}
-
-ensure_gemma_compat
-
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
-  if [ ! -f "${GEMMA_CANONICAL_PATH}" ]; then
-    echo "[models] marker exists but Gemma canonical file is missing, forcing model check."
+  if [ ! -f "${GEMMA_PRIMARY_PATH}" ]; then
+    echo "[models] marker exists but Gemma bundle is missing, forcing model check."
     rm -f "${MARKER_FILE}"
   else
     echo "[models] marker file exists, skipping download."
@@ -90,6 +73,42 @@ shutil.copy2(local_path, os.path.join(out_dir, out_name))
 PY
 }
 
+fetch_hf_repo() {
+  local source="$1"
+  local destination_dir="$2"
+
+  local ref="${source#hf://}"
+  local repo extra
+  repo="$(echo "${ref}" | cut -d'/' -f1-2)"
+  extra="$(echo "${ref}" | cut -d'/' -f3-)"
+
+  if [ -z "${repo}" ] || [ "${repo}" = "${ref}" ]; then
+    echo "[models] invalid hf repo format: ${source}" >&2
+    return 1
+  fi
+  if [ -n "${extra}" ] && [ "${extra}" != "${ref}" ]; then
+    echo "[models] hf repo download expects repository root (hf://org/repo): ${source}" >&2
+    return 1
+  fi
+
+  python3 - "${repo}" "${destination_dir}" <<'PY'
+import os
+import sys
+from huggingface_hub import snapshot_download
+
+repo_id, out_dir = sys.argv[1:3]
+token = os.environ.get("HF_TOKEN")
+os.makedirs(out_dir, exist_ok=True)
+snapshot_download(
+    repo_id=repo_id,
+    local_dir=out_dir,
+    local_dir_use_symlinks=False,
+    token=token,
+    resume_download=True,
+)
+PY
+}
+
 fetch_model() {
   local source="$1"
   local destination="$2"
@@ -130,9 +149,9 @@ MODEL_ENV_KEYS=(
 
 MODEL_PATHS=(
   "checkpoints/ltx2_19b_distilled_fp8.safetensors"
-  "text_encoders/model.safetensors"
-  "tokenizer/tokenizer.model"
-  "tokenizer/preprocessor_config.json"
+  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors"
+  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model"
+  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json"
   "upscale_models/spatial_upscaler_x2.safetensors"
   "upscale_models/temporal_upscaler_x2.safetensors"
   "controlnet/ic_lora_union.safetensors"
@@ -150,6 +169,19 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
   source="${!env_key:-}"
 
   mkdir -p "$(dirname "${destination}")"
+
+  if [ "${env_key}" = "GEMMA_TEXT_ENCODER_SOURCE" ] && [[ "${source}" =~ ^hf://[^/]+/[^/]+/?$ ]]; then
+    if [ -f "${destination}" ]; then
+      echo "[models] exists: ${relative_path}"
+      continue
+    fi
+    echo "[models] downloading ${model_label} bundle -> $(dirname "${relative_path}")"
+    if ! fetch_hf_repo "${source}" "$(dirname "${destination}")"; then
+      echo "[models] failed to download ${model_label} bundle" >&2
+      failed=$((failed + 1))
+    fi
+    continue
+  fi
 
   if [ -f "${destination}" ]; then
     echo "[models] exists: ${relative_path}"
