@@ -166,6 +166,7 @@ RUNPOD_SERVERLESS=true
 
 Bu modda worker request uzerinden kalite ayarlarini degistirebilirsin:
 
+- `ping=true` (workflow calistirmadan health-check)
 - `duration_seconds` (otomatik `frames` hesaplar)
 - `fps`
 - `steps`
@@ -206,6 +207,8 @@ Ornek RunPod request payload:
 ```
 
 Not: `workflows/*.json` dosyalari ComfyUI UI formatindadir (`nodes`). Worker, API format prompt bekler (`class_type` + `inputs`). API format graph'i ComfyUI'dan `Save (API Format)` ile alip request'te `prompt` olarak gonderebilirsin.
+
+Alternatif: API graph'i dosyaya koyup `workflow_api` ile dogrudan path verebilirsin (ornek: `workflow_api=image_to_video.api.json`).
 
 Ek notlar:
 - `wait=true` iken job bitince output dosyalari default olarak silinir (`CLEANUP_JOB_OUTPUTS=true`).

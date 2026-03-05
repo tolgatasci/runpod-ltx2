@@ -87,16 +87,75 @@ def _to_bool(value: Any, default: bool) -> bool:
     return bool(value)
 
 
-def _load_prompt_from_file(workflow_name: str) -> dict[str, Any]:
+def _resolve_workflow_path(workflow_name: str) -> Path:
     filename = WORKFLOW_ALIASES.get(workflow_name, workflow_name)
     path = Path(filename)
     if not path.is_absolute():
         path = DEFAULT_WORKFLOW_DIR / filename
-    if not path.exists():
-        raise FileNotFoundError(f"Workflow file not found: {path}")
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return path
 
+
+def _api_sidecar_candidates(path: Path) -> list[Path]:
+    stem = path.stem
+    return [
+        path.with_name(f"{stem}.api.json"),
+        path.with_name(f"{stem}_api.json"),
+    ]
+
+
+def _load_prompt_from_file(workflow_name: str, allow_api_fallback: bool = True) -> tuple[dict[str, Any], str]:
+    path = _resolve_workflow_path(workflow_name)
+    selected_path = path
+
+    if allow_api_fallback:
+        for candidate in _api_sidecar_candidates(path):
+            if candidate.exists():
+                selected_path = candidate
+                break
+
+    if not selected_path.exists():
+        raise FileNotFoundError(f"Workflow file not found: {selected_path}")
+
+    with selected_path.open("r", encoding="utf-8") as f:
+        return json.load(f), str(selected_path)
+
+
+def _healthcheck(comfy_url: str) -> dict[str, Any]:
+    try:
+        response = requests.get(f"{comfy_url}/", timeout=DEFAULT_HTTP_TIMEOUT)
+        response.raise_for_status()
+        return {"ok": True, "mode": "health", "comfyui_url": comfy_url, "comfyui_http_status": response.status_code}
+    except Exception as exc:
+        return {"ok": False, "mode": "health", "comfyui_url": comfy_url, "error": str(exc)}
+
+
+def _workflow_format_hint(workflow_path: str | None) -> str:
+    source = f"'{workflow_path}'" if workflow_path else "provided workflow"
+    return (
+        f"{source} is ComfyUI UI format ('nodes'). "
+        "Send API format graph ('class_type' + 'inputs') in 'prompt', "
+        "or provide 'workflow_api' pointing to an API-format JSON "
+        "(export from ComfyUI with Save (API Format))."
+    )
+
+
+def _load_prompt_from_request(req: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    prompt = req.get("prompt")
+    if prompt is not None:
+        if isinstance(prompt, str):
+            prompt = json.loads(prompt)
+        if not isinstance(prompt, dict):
+            raise ValueError("'prompt' must be a JSON object.")
+        return prompt, "inline:prompt"
+
+    workflow_api_name = req.get("workflow_api")
+    if workflow_api_name:
+        prompt, source = _load_prompt_from_file(str(workflow_api_name), allow_api_fallback=False)
+        return prompt, source
+
+    workflow_name = str(req.get("workflow", "image_to_video"))
+    prompt, source = _load_prompt_from_file(workflow_name, allow_api_fallback=True)
+    return prompt, source
 
 def _is_api_prompt(prompt: dict[str, Any]) -> bool:
     if not isinstance(prompt, dict) or not prompt:
@@ -484,23 +543,15 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         req = _event_input(event)
         comfy_url = str(req.get("comfyui_url", DEFAULT_COMFYUI_URL)).rstrip("/")
 
+        if _to_bool(req.get("ping"), False):
+            return _healthcheck(comfy_url)
+
         created_input_file = _materialize_input_image(req)
 
-        prompt = req.get("prompt")
-        if prompt is None:
-            workflow_name = str(req.get("workflow", "image_to_video"))
-            prompt = _load_prompt_from_file(workflow_name)
-        elif isinstance(prompt, str):
-            prompt = json.loads(prompt)
-
-        if not isinstance(prompt, dict):
-            raise ValueError("'prompt' must be a JSON object.")
+        prompt, prompt_source = _load_prompt_from_request(req)
 
         if _is_ui_workflow(prompt):
-            raise ValueError(
-                "Workflow is in ComfyUI UI format ('nodes'). Send API prompt format "
-                "('class_type' + 'inputs') via 'prompt', or provide an API-format file."
-            )
+            raise ValueError(_workflow_format_hint(prompt_source))
         if not _is_api_prompt(prompt):
             raise ValueError("Prompt graph is not valid ComfyUI API format.")
 
