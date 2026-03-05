@@ -14,7 +14,7 @@ if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
   exit 0
 fi
 
-mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,upscale_models,loras,controlnet}
+mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,loras,controlnet}
 
 fetch_http() {
   local source="$1"
@@ -85,6 +85,7 @@ fetch_model() {
 MODEL_LABELS=(
   "LTX-2 19B distilled fp8"
   "Gemma text encoder"
+  "Gemma tokenizer"
   "Spatial upscaler"
   "Temporal upscaler"
   "IC-LoRA union control"
@@ -94,6 +95,7 @@ MODEL_LABELS=(
 MODEL_ENV_KEYS=(
   "LTX2_MODEL_SOURCE"
   "GEMMA_TEXT_ENCODER_SOURCE"
+  "GEMMA_TOKENIZER_SOURCE"
   "SPATIAL_UPSCALER_SOURCE"
   "TEMPORAL_UPSCALER_SOURCE"
   "IC_LORA_UNION_SOURCE"
@@ -103,6 +105,7 @@ MODEL_ENV_KEYS=(
 MODEL_PATHS=(
   "checkpoints/ltx2_19b_distilled_fp8.safetensors"
   "text_encoders/gemma_text_encoder.safetensors"
+  "tokenizer/tokenizer.model"
   "upscale_models/spatial_upscaler_x2.safetensors"
   "upscale_models/temporal_upscaler_x2.safetensors"
   "controlnet/ic_lora_union.safetensors"
