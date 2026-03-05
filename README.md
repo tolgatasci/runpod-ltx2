@@ -71,10 +71,17 @@ CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/l
 Varsayilanlar otomatik gelir:
 
 - `PERSISTENT_ROOT=/runpod-volume`
+- `PERSIST_MODELS=true`
+- `PERSIST_HF_CACHE=true`
+- `PERSIST_INPUT=false`
+- `PERSIST_OUTPUT=false`
+- `PERSIST_WORKFLOWS=false`
 - `MODELS_AUTO_DOWNLOAD=true`
 - `DOWNLOAD_ONCE=true`
 - `REQUIRE_ALL_MODELS=false`
 - `HF_HUB_ENABLE_HF_TRANSFER=1`
+- `CLEANUP_JOB_INPUTS=true`
+- `CLEANUP_JOB_OUTPUTS=true`
 
 3. Build + run:
 
@@ -109,7 +116,7 @@ CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/l
 
 Container ilk acilista model kaynaklari tanimliysa model bootstrap scripti indirir. Sonraki acilislarda model dosyalari ve marker (`.ltx2_models_ready`) network volume icinde kaldigi icin tekrar indirme yapmaz.
 
-Ilk kurulumdan sonra en hizli acilis icin opsiyonel olarak `MODELS_AUTO_DOWNLOAD=false` yapabilirsin.
+Default davranis: network volume'da sadece modeller ve HF cache kalici tutulur. `input/output/workflow` klasorleri runtime storage'da acilir ve otomatik prune/cleanup ile temizlenir.
 
 ## Yatay / dikey cikis
 
@@ -147,6 +154,7 @@ Bu modda worker request uzerinden kalite ayarlarini degistirebilirsin:
 - `cfg`, `denoise`
 - `positive_prompt`, `negative_prompt`
 - `node_overrides` (node bazli net kontrol)
+- `input_image_base64` veya `input_image_url` (runtime'da otomatik input dosyasina cevrilir)
 
 Ornek RunPod request payload:
 
@@ -163,15 +171,23 @@ Ornek RunPod request payload:
         }
       }
     },
+    "input_image_base64": "data:image/png;base64,iVBORw0KGgoAAA...",
     "duration_seconds": 6.5,
     "fps": 24,
     "steps": 28,
     "seed": 987654321,
     "width": 1920,
     "height": 1080,
-    "wait": true
+    "wait": true,
+    "cleanup_outputs": true,
+    "cleanup_inputs": true
   }
 }
 ```
 
 Not: `workflows/*.json` dosyalari ComfyUI UI formatindadir (`nodes`). Worker, API format prompt bekler (`class_type` + `inputs`). API format graph'i ComfyUI'dan `Save (API Format)` ile alip request'te `prompt` olarak gonderebilirsin.
+
+Ek notlar:
+- `wait=true` iken job bitince output dosyalari default olarak silinir (`CLEANUP_JOB_OUTPUTS=true`).
+- `preserve_outputs=true` gonderirsen o request icin silme kapatilir.
+- `return_output_base64=true` ile uygun boyuttaki output dosyalari response icinde base64 donulebilir (`MAX_INLINE_OUTPUT_MB` limiti ile).

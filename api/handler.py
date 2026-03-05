@@ -1,5 +1,8 @@
+import base64
+import binascii
 import copy
 import json
+import mimetypes
 import os
 import time
 import uuid
@@ -10,11 +13,19 @@ from urllib.parse import urlencode
 import requests
 
 
+COMFYUI_DIR = os.getenv("COMFYUI_DIR", "/ComfyUI")
 DEFAULT_COMFYUI_URL = os.getenv("COMFYUI_API_URL", "http://127.0.0.1:8188").rstrip("/")
 DEFAULT_HTTP_TIMEOUT = float(os.getenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "30"))
 DEFAULT_POLL_INTERVAL = float(os.getenv("COMFYUI_POLL_INTERVAL_SECONDS", "2"))
 DEFAULT_JOB_TIMEOUT = float(os.getenv("COMFYUI_JOB_TIMEOUT_SECONDS", "1800"))
 DEFAULT_WORKFLOW_DIR = Path(os.getenv("WORKFLOW_DIR", "/opt/ltx2/workflows"))
+DEFAULT_INPUT_DIR = Path(os.getenv("COMFYUI_INPUT_DIR", f"{COMFYUI_DIR}/input"))
+DEFAULT_OUTPUT_DIR = Path(os.getenv("COMFYUI_OUTPUT_DIR", f"{COMFYUI_DIR}/output"))
+DEFAULT_TEMP_DIR = Path(os.getenv("COMFYUI_TEMP_DIR", f"{COMFYUI_DIR}/temp"))
+DEFAULT_CLEANUP_JOB_INPUTS = os.getenv("CLEANUP_JOB_INPUTS", "true")
+DEFAULT_CLEANUP_JOB_OUTPUTS = os.getenv("CLEANUP_JOB_OUTPUTS", "true")
+DEFAULT_MAX_INLINE_OUTPUT_MB = float(os.getenv("MAX_INLINE_OUTPUT_MB", "30"))
+DEFAULT_MAX_INPUT_IMAGE_MB = float(os.getenv("MAX_INPUT_IMAGE_MB", "30"))
 
 WORKFLOW_ALIASES = {
     "image_to_video": "image_to_video.json",
@@ -37,7 +48,7 @@ PROMPT_ALIASES = {
     "negative_prompt": ["negative_prompt", "negative", "neg_prompt"],
 }
 
-INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image", "filename"]
+INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 
 
 def _event_input(event: Any) -> dict[str, Any]:
@@ -125,8 +136,7 @@ def _extract_tuning_values(req: dict[str, Any]) -> dict[str, Any]:
         duration = _to_float(duration, "duration_seconds")
         fps = values.get("fps")
         if fps is None:
-            fps_from_req = req.get("fps", 24)
-            fps = _to_int(fps_from_req, "fps")
+            fps = _to_int(req.get("fps", 24), "fps")
             values["fps"] = fps
         values["frames"] = max(1, int(round(duration * fps)))
 
@@ -181,6 +191,7 @@ def _apply_input_image(prompt: dict[str, Any], req: dict[str, Any]) -> list[dict
     input_image = req.get("input_image")
     if not input_image:
         return []
+
     patched: list[dict[str, Any]] = []
     for node_id, inputs in _iter_node_inputs(prompt):
         for input_key in INPUT_IMAGE_ALIASES:
@@ -231,6 +242,110 @@ def _apply_node_overrides(prompt: dict[str, Any], node_overrides: Any) -> list[d
             )
 
     return patched
+
+
+def _safe_filename(filename: str) -> str:
+    safe = Path(str(filename)).name.strip()
+    if not safe or safe in {".", ".."}:
+        return "input.png"
+    return safe.replace("\x00", "")
+
+
+def _unique_file_path(directory: Path, filename: str) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_filename(filename)
+    candidate = directory / safe_name
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    while True:
+        candidate = directory / f"{stem}_{uuid.uuid4().hex[:8]}{suffix}"
+        if not candidate.exists():
+            return candidate
+
+
+def _infer_extension_from_mime(mime: str | None, default_ext: str = ".png") -> str:
+    if not mime:
+        return default_ext
+    ext = mimetypes.guess_extension(mime)
+    if ext == ".jpe":
+        ext = ".jpg"
+    return ext or default_ext
+
+
+def _decode_base64_image(payload: str) -> tuple[bytes, str]:
+    raw_payload = payload.strip()
+    mime_type: str | None = None
+
+    if raw_payload.startswith("data:"):
+        parts = raw_payload.split(",", 1)
+        if len(parts) != 2:
+            raise ValueError("Invalid data URI for input image.")
+        header, raw_payload = parts
+        mime_type = header[5:].split(";")[0] or None
+
+    compact = "".join(raw_payload.split())
+    if not compact:
+        raise ValueError("input_image_base64 is empty.")
+
+    try:
+        data = base64.b64decode(compact, validate=True)
+    except binascii.Error:
+        padding = "=" * (-len(compact) % 4)
+        try:
+            data = base64.b64decode(compact + padding, validate=False)
+        except binascii.Error as exc:
+            raise ValueError("Invalid base64 image payload.") from exc
+
+    if not data:
+        raise ValueError("Decoded input image is empty.")
+
+    return data, _infer_extension_from_mime(mime_type)
+
+
+def _write_input_file(data: bytes, filename: str) -> Path:
+    max_bytes = int(DEFAULT_MAX_INPUT_IMAGE_MB * 1024 * 1024)
+    if len(data) > max_bytes:
+        raise ValueError(f"Input image exceeds MAX_INPUT_IMAGE_MB ({DEFAULT_MAX_INPUT_IMAGE_MB} MB).")
+
+    path = _unique_file_path(DEFAULT_INPUT_DIR, filename)
+    path.write_bytes(data)
+    return path
+
+
+def _materialize_input_image(req: dict[str, Any]) -> Path | None:
+    base64_payload = req.get("input_image_base64") or req.get("image_base64")
+    if base64_payload:
+        data, ext = _decode_base64_image(str(base64_payload))
+        filename = str(req.get("input_image_name", f"api_input_{uuid.uuid4().hex}{ext}"))
+        path = _write_input_file(data, filename)
+        req["input_image"] = path.name
+        return path
+
+    image_url = req.get("input_image_url") or req.get("image_url")
+    if image_url:
+        response = requests.get(str(image_url), timeout=DEFAULT_HTTP_TIMEOUT)
+        response.raise_for_status()
+        mime_type = response.headers.get("content-type", "").split(";")[0].strip() or None
+        ext = _infer_extension_from_mime(mime_type)
+        filename = str(req.get("input_image_name", f"api_input_{uuid.uuid4().hex}{ext}"))
+        path = _write_input_file(response.content, filename)
+        req["input_image"] = path.name
+        return path
+
+    input_image = req.get("input_image")
+    if isinstance(input_image, str) and input_image.strip():
+        path = Path(input_image)
+        if path.is_absolute() and path.exists() and path.is_file():
+            data = path.read_bytes()
+            target = _write_input_file(data, req.get("input_image_name", path.name))
+            req["input_image"] = target.name
+            return target
+        req["input_image"] = _safe_filename(input_image)
+
+    return None
 
 
 def _submit_prompt(comfy_url: str, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
@@ -289,10 +404,87 @@ def _extract_outputs(history_entry: dict[str, Any], comfy_url: str) -> list[dict
     return outputs
 
 
+def _resolve_output_local_path(output_item: dict[str, Any]) -> Path | None:
+    output_type = str(output_item.get("type", "output"))
+    base_dir = {
+        "output": DEFAULT_OUTPUT_DIR,
+        "input": DEFAULT_INPUT_DIR,
+        "temp": DEFAULT_TEMP_DIR,
+    }.get(output_type, DEFAULT_OUTPUT_DIR)
+
+    filename = output_item.get("filename")
+    if not filename:
+        return None
+
+    subfolder = str(output_item.get("subfolder", "")).strip("/\\")
+    candidate = (base_dir / subfolder / _safe_filename(str(filename))).resolve()
+    base_resolved = base_dir.resolve()
+
+    if candidate != base_resolved and base_resolved not in candidate.parents:
+        return None
+
+    return candidate
+
+
+def _attach_inline_base64(outputs: list[dict[str, Any]], max_mb: float) -> None:
+    max_bytes = int(max_mb * 1024 * 1024)
+    for item in outputs:
+        path = _resolve_output_local_path(item)
+        if path is None or not path.exists() or not path.is_file():
+            item["inline_status"] = "missing"
+            continue
+
+        file_size = path.stat().st_size
+        if file_size > max_bytes:
+            item["inline_status"] = "too_large"
+            item["size_bytes"] = file_size
+            continue
+
+        mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        item["mime_type"] = mime_type
+        item["size_bytes"] = file_size
+        item["base64"] = base64.b64encode(path.read_bytes()).decode("ascii")
+        item["inline_status"] = "ok"
+
+
+def _cleanup_outputs(outputs: list[dict[str, Any]]) -> int:
+    deleted = 0
+    for item in outputs:
+        path = _resolve_output_local_path(item)
+        if path is None:
+            item["deleted"] = False
+            continue
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+                deleted += 1
+                item["deleted"] = True
+            else:
+                item["deleted"] = False
+        except OSError:
+            item["deleted"] = False
+    return deleted
+
+
+def _cleanup_input_file(path: Path | None) -> bool:
+    if path is None:
+        return False
+    try:
+        if path.exists() and path.is_file():
+            path.unlink()
+            return True
+    except OSError:
+        return False
+    return False
+
+
 def handle_event(event: dict[str, Any]) -> dict[str, Any]:
+    created_input_file: Path | None = None
     try:
         req = _event_input(event)
         comfy_url = str(req.get("comfyui_url", DEFAULT_COMFYUI_URL)).rstrip("/")
+
+        created_input_file = _materialize_input_image(req)
 
         prompt = req.get("prompt")
         if prompt is None:
@@ -334,12 +526,30 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
                 "client_id": client_id,
                 "applied_overrides": patched,
                 "submit_response": submit_payload,
+                "note": "Job queued. Outputs/input cleanup runs after completion only when wait=true.",
             }
 
         timeout_s = _to_float(req.get("timeout_seconds", DEFAULT_JOB_TIMEOUT), "timeout_seconds")
         poll_s = _to_float(req.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL), "poll_interval_seconds")
         history_entry = _wait_for_history(comfy_url, prompt_id, timeout_s=timeout_s, poll_s=poll_s)
         outputs = _extract_outputs(history_entry, comfy_url)
+
+        return_inline_base64 = _to_bool(req.get("return_output_base64"), False)
+        if return_inline_base64:
+            max_inline_mb = _to_float(req.get("max_inline_output_mb", DEFAULT_MAX_INLINE_OUTPUT_MB), "max_inline_output_mb")
+            _attach_inline_base64(outputs, max_inline_mb)
+
+        preserve_outputs = _to_bool(req.get("preserve_outputs"), False)
+        cleanup_outputs = _to_bool(req.get("cleanup_outputs"), _to_bool(DEFAULT_CLEANUP_JOB_OUTPUTS, True))
+        cleanup_inputs = _to_bool(req.get("cleanup_inputs"), _to_bool(DEFAULT_CLEANUP_JOB_INPUTS, True))
+
+        outputs_deleted = 0
+        if cleanup_outputs and not preserve_outputs:
+            outputs_deleted = _cleanup_outputs(outputs)
+
+        input_deleted = False
+        if cleanup_inputs:
+            input_deleted = _cleanup_input_file(created_input_file)
 
         return {
             "ok": True,
@@ -348,7 +558,13 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
             "client_id": client_id,
             "applied_overrides": patched,
             "outputs": outputs,
+            "cleanup": {
+                "outputs_deleted": outputs_deleted,
+                "input_deleted": input_deleted,
+                "preserve_outputs": preserve_outputs,
+            },
             "history": history_entry,
         }
     except Exception as exc:  # pragma: no cover
+        _cleanup_input_file(created_input_file)
         return {"ok": False, "error": str(exc)}
