@@ -19,11 +19,24 @@ IC_LORA_PATH="${MODEL_ROOT}/loras/ltx-2-19b-ic-lora-union-ref0.5.safetensors"
 
 mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,latent_upscale_models,loras,controlnet}
 
+ensure_gemma_compat_paths() {
+  mkdir -p "${GEMMA_BUNDLE_DIR}"
+  if [ -f "${GEMMA_PRIMARY_PATH}" ] && [ ! -e "${GEMMA_COMPAT_PATH}" ]; then
+    ln -sf ../gemma_text_encoder.safetensors "${GEMMA_COMPAT_PATH}"
+  fi
+  if [ -f "${GEMMA_COMPAT_PATH}" ] && [ ! -e "${GEMMA_PRIMARY_PATH}" ]; then
+    ln -sf gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors "${GEMMA_PRIMARY_PATH}"
+  fi
+}
+
+ensure_gemma_compat_paths
+
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
   missing_required=0
   for required in \
     "${CHECKPOINT_PATH}" \
     "${GEMMA_PRIMARY_PATH}" \
+    "${GEMMA_COMPAT_PATH}" \
     "${GEMMA_TOKENIZER_PATH}" \
     "${GEMMA_PREPROCESSOR_PATH}" \
     "${SPATIAL_UPSCALER_PATH}" \
@@ -235,13 +248,7 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
   fi
 done
 
-mkdir -p "${GEMMA_BUNDLE_DIR}"
-if [ -f "${GEMMA_PRIMARY_PATH}" ] && [ ! -e "${GEMMA_COMPAT_PATH}" ]; then
-  ln -sf ../gemma_text_encoder.safetensors "${GEMMA_COMPAT_PATH}"
-fi
-if [ -f "${GEMMA_COMPAT_PATH}" ] && [ ! -e "${GEMMA_PRIMARY_PATH}" ]; then
-  ln -sf gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors "${GEMMA_PRIMARY_PATH}"
-fi
+ensure_gemma_compat_paths
 
 if [ "${failed}" -gt 0 ] && [ "${REQUIRE_ALL_MODELS}" = "true" ]; then
   echo "[models] one or more model downloads failed and REQUIRE_ALL_MODELS=true." >&2
