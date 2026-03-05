@@ -28,8 +28,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MAX_INLINE_OUTPUT_MB=30 \
     LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors \
     GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it.safetensors \
-    GEMMA_TOKENIZER_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model \
-    GEMMA_PREPROCESSOR_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json \
+    GEMMA_TOKENIZER_SOURCE=hf://Lightricks/LTX-2/tokenizer/tokenizer.model \
+    GEMMA_PREPROCESSOR_SOURCE=hf://Lightricks/LTX-2/tokenizer/preprocessor_config.json \
     SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors \
     TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors \
     IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors \
@@ -55,7 +55,7 @@ RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git ${COMFYUI_
 
 WORKDIR ${COMFYUI_DIR}
 
-RUN sed -i 's/comfy-aimdo>=0.2.7/comfy-aimdo>=0.2.6,<0.2.7/g' requirements.txt \
+RUN sed -i 's/comfy-aimdo>=0.2.7/comfy-aimdo==0.2.6/g' requirements.txt \
     && python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 \
     && python3 -m pip install -r requirements.txt
 

@@ -66,8 +66,8 @@ cp .env.example .env
 HF_TOKEN=hf_xxx
 LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
 GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it.safetensors
-GEMMA_TOKENIZER_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model
-GEMMA_PREPROCESSOR_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json
+GEMMA_TOKENIZER_SOURCE=hf://Lightricks/LTX-2/tokenizer/tokenizer.model
+GEMMA_PREPROCESSOR_SOURCE=hf://Lightricks/LTX-2/tokenizer/preprocessor_config.json
 SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
 TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors
 IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors
@@ -110,6 +110,7 @@ Onerilen ayarlar:
 - Disk: `150GB`
 - Exposed Port: `8188`
 - Network Volume mount path: varsayilan `/runpod-volume` (farkliysa `PERSISTENT_ROOT` ile degistir)
+- Serverless autoscale: `Workers Min=0`, `Workers Max=1` (request gelmediginde kapanir)
 
 RunPod `Environment Variables` alaninda `HF_TOKEN` + model kaynaklarini gir:
 
@@ -117,8 +118,8 @@ RunPod `Environment Variables` alaninda `HF_TOKEN` + model kaynaklarini gir:
 HF_TOKEN=hf_xxx
 LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
 GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it.safetensors
-GEMMA_TOKENIZER_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model
-GEMMA_PREPROCESSOR_SOURCE=hf://google/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json
+GEMMA_TOKENIZER_SOURCE=hf://Lightricks/LTX-2/tokenizer/tokenizer.model
+GEMMA_PREPROCESSOR_SOURCE=hf://Lightricks/LTX-2/tokenizer/preprocessor_config.json
 SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
 TEMPORAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-temporal-upscaler-x2-1.0.safetensors
 IC_LORA_UNION_SOURCE=hf://Lightricks/LTX-2-19b-IC-LoRA-Union-Control/ltx-2-19b-ic-lora-union-control-ref0.5.safetensors

@@ -39,6 +39,28 @@ is_true() {
   esac
 }
 
+resolve_persistent_root() {
+  local requested="$1"
+  local candidate=""
+
+  if [ "${requested}" != "auto" ] && [ -n "${requested}" ]; then
+    mkdir -p "${requested}" 2>/dev/null || true
+    if [ -d "${requested}" ] && [ -w "${requested}" ]; then
+      echo "${requested}"
+      return 0
+    fi
+  fi
+
+  for candidate in /runpod-volume /workspace; do
+    if [ -d "${candidate}" ] && [ -w "${candidate}" ]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "/runpod-volume"
+}
+
 link_dir() {
   local target="$1"
   local source="$2"
@@ -122,6 +144,7 @@ start_runtime_pruner() {
 }
 
 echo "[entrypoint] preparing ComfyUI folders..."
+PERSISTENT_ROOT="$(resolve_persistent_root "${PERSISTENT_ROOT}")"
 mkdir -p "${COMFYUI_DIR}" "${WORKFLOW_DST}" "${RUNTIME_ROOT}"
 mkdir -p "${PERSISTENT_ROOT}" 2>/dev/null || true
 
