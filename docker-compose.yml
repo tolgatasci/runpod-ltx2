@@ -1,0 +1,39 @@
+services:
+  comfyui-ltx2:
+    build:
+      context: .
+    image: ghcr.io/your_github/ltx2-runpod:latest
+    container_name: comfyui-ltx2
+    gpus: all
+    ports:
+      - "8188:8188"
+    shm_size: "16gb"
+    environment:
+      COMFYUI_LISTEN: 0.0.0.0
+      COMFYUI_PORT: 8188
+      PERSISTENT_ROOT: ${PERSISTENT_ROOT:-/runpod-volume}
+      PERSIST_MODELS_SUBDIR: ${PERSIST_MODELS_SUBDIR:-models}
+      PERSIST_INPUT_SUBDIR: ${PERSIST_INPUT_SUBDIR:-input}
+      PERSIST_OUTPUT_SUBDIR: ${PERSIST_OUTPUT_SUBDIR:-output}
+      PERSIST_WORKFLOWS_SUBDIR: ${PERSIST_WORKFLOWS_SUBDIR:-workflows}
+      MODELS_AUTO_DOWNLOAD: "true"
+      DOWNLOAD_ONCE: "true"
+      REQUIRE_ALL_MODELS: "false"
+      HF_HUB_ENABLE_HF_TRANSFER: ${HF_HUB_ENABLE_HF_TRANSFER:-1}
+      HF_TOKEN: ${HF_TOKEN:-}
+      LTX2_MODEL_SOURCE: ${LTX2_MODEL_SOURCE:-}
+      GEMMA_TEXT_ENCODER_SOURCE: ${GEMMA_TEXT_ENCODER_SOURCE:-}
+      SPATIAL_UPSCALER_SOURCE: ${SPATIAL_UPSCALER_SOURCE:-}
+      TEMPORAL_UPSCALER_SOURCE: ${TEMPORAL_UPSCALER_SOURCE:-}
+      IC_LORA_UNION_SOURCE: ${IC_LORA_UNION_SOURCE:-}
+      CAMERA_MOTION_LORA_SOURCE: ${CAMERA_MOTION_LORA_SOURCE:-}
+    volumes:
+      - ./data:/runpod-volume
+      - ./workflows:/opt/ltx2/workflows
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8188/ > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
