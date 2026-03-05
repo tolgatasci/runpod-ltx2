@@ -9,9 +9,9 @@ REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
 GEMMA_BUNDLE_DIR="${MODEL_ROOT}/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
-GEMMA_PRIMARY_PATH="${GEMMA_BUNDLE_DIR}/model-00001-of-00005.safetensors"
+GEMMA_PRIMARY_PATH="${GEMMA_BUNDLE_DIR}/model.safetensors"
 
-mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,loras,controlnet}
+mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,latent_upscale_models,loras,controlnet}
 
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
   if [ ! -f "${GEMMA_PRIMARY_PATH}" ]; then
@@ -148,14 +148,14 @@ MODEL_ENV_KEYS=(
 )
 
 MODEL_PATHS=(
-  "checkpoints/ltx2_19b_distilled_fp8.safetensors"
-  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors"
+  "checkpoints/ltx-2-19b-distilled.safetensors"
+  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors"
   "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model"
   "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json"
-  "upscale_models/spatial_upscaler_x2.safetensors"
-  "upscale_models/temporal_upscaler_x2.safetensors"
-  "controlnet/ic_lora_union.safetensors"
-  "loras/camera_motion_lora.safetensors"
+  "latent_upscale_models/ltx-2-spatial-upscaler-x2-1.0.safetensors"
+  "upscale_models/ltx-2-temporal-upscaler-x2-1.0.safetensors"
+  "loras/ltx-2-19b-ic-lora-union-ref0.5.safetensors"
+  "loras/ltx-2-19b-lora-camera-control-static.safetensors"
 )
 
 missing=0

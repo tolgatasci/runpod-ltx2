@@ -49,8 +49,8 @@ PROMPT_ALIASES = {
 }
 
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
-DEFAULT_LTXV_MODEL_FILENAME = "ltx2_19b_distilled_fp8.safetensors"
-DEFAULT_GEMMA_MODEL_FILENAME = "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors"
+DEFAULT_LTXV_MODEL_FILENAME = "ltx-2-19b-distilled.safetensors"
+DEFAULT_GEMMA_MODEL_FILENAME = "gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
@@ -86,9 +86,22 @@ UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
     "SaveVideo": ["filename_prefix", "format", "codec"],
     # LTX workflow nodes whose required fields are widget-only in UI exports
     "LowVRAMCheckpointLoader": ["ckpt_name"],
+    "LowVRAMAudioVAELoader": ["ckpt_name"],
+    "LowVRAMLatentUpscaleModelLoader": ["model_name"],
     "LTXICLoRALoaderModelOnly": ["lora_name", "strength_model"],
     "Canny": ["low_threshold", "high_threshold"],
     "EmptyLTXVLatentVideo": ["width", "height", "length", "batch_size"],
+    "LTXVEmptyLatentAudio": ["frames_number", "frame_rate", "batch_size"],
+    "LTXVSetAudioVideoMaskByTime": [
+        "start_time",
+        "end_time",
+        "video_fps",
+        "mask_video",
+        "mask_audio",
+        "mask_init_value_video",
+        "mask_init_value_audio",
+        "slope_len",
+    ],
     "LTXAddVideoICLoRAGuide": [
         "frame_idx",
         "strength",
@@ -196,7 +209,7 @@ def _widget_map_from_ui_node(node: dict[str, Any]) -> dict[str, Any]:
     for idx, name in enumerate(fallback_names):
         if idx >= len(values):
             break
-        mapping.setdefault(name, values[idx])
+        mapping[name] = values[idx]
 
     return mapping
 
