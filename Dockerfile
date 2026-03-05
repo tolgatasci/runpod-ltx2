@@ -59,6 +59,8 @@ RUN python3 -m pip install torch torchvision torchaudio --index-url https://down
 RUN git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo custom_nodes/ComfyUI-LTXVideo \
     && git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite custom_nodes/VideoHelperSuite
 
+COPY custom_nodes ${COMFYUI_DIR}/custom_nodes
+
 RUN set -eux; \
     for req in custom_nodes/*/requirements.txt; do \
       if [ -f "$req" ]; then python3 -m pip install -r "$req"; fi; \

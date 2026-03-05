@@ -37,6 +37,9 @@ ltx2-runpod-docker/
 ├── workflows/
 │   ├── image_to_video.json
 │   └── cinematic_i2v.json
+├── custom_nodes/
+│   └── ltx2_compat/
+│       └── __init__.py
 ├── scripts/
 │   └── download_models.sh
 ├── api/
@@ -47,6 +50,7 @@ ltx2-runpod-docker/
 ```
 
 `workflows/` altindaki dosyalar, `ComfyUI-LTXVideo` reposundaki resmi ornek graph'larin bu yapidaki adlarla kopyalanmis halidir.
+`custom_nodes/ltx2_compat` icinde workflow uyumlulugu icin `InversionDemoLazySwitch` (Bypass Enhancer) compatibility node'u bulunur.
 
 ## Hızlı başlangıç (local GPU)
 
@@ -103,9 +107,10 @@ Onerilen ayarlar:
 - Exposed Port: `8188`
 - Network Volume mount path: varsayilan `/runpod-volume` (farkliysa `PERSISTENT_ROOT` ile degistir)
 
-RunPod `Environment Variables` alaninda sadece model kaynaklarini girmen yeterli:
+RunPod `Environment Variables` alaninda `HF_TOKEN` + model kaynaklarini gir:
 
 ```bash
+HF_TOKEN=hf_xxx
 LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
 GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors
 SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
