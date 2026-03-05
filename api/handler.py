@@ -19,6 +19,7 @@ DEFAULT_HTTP_TIMEOUT = float(os.getenv("COMFYUI_HTTP_TIMEOUT_SECONDS", "30"))
 DEFAULT_POLL_INTERVAL = float(os.getenv("COMFYUI_POLL_INTERVAL_SECONDS", "2"))
 DEFAULT_JOB_TIMEOUT = float(os.getenv("COMFYUI_JOB_TIMEOUT_SECONDS", "1800"))
 DEFAULT_WORKFLOW_DIR = Path(os.getenv("WORKFLOW_DIR", "/opt/ltx2/workflows"))
+DEFAULT_MODELS_DIR = Path(os.getenv("COMFYUI_MODELS_DIR", f"{COMFYUI_DIR}/models"))
 DEFAULT_INPUT_DIR = Path(os.getenv("COMFYUI_INPUT_DIR", f"{COMFYUI_DIR}/input"))
 DEFAULT_OUTPUT_DIR = Path(os.getenv("COMFYUI_OUTPUT_DIR", f"{COMFYUI_DIR}/output"))
 DEFAULT_TEMP_DIR = Path(os.getenv("COMFYUI_TEMP_DIR", f"{COMFYUI_DIR}/temp"))
@@ -51,6 +52,7 @@ PROMPT_ALIASES = {
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 DEFAULT_LTXV_MODEL_FILENAME = "ltx-2-19b-distilled.safetensors"
 DEFAULT_GEMMA_MODEL_FILENAME = "gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors"
+LEGACY_GEMMA_MODEL_FILENAME = "gemma_text_encoder.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
@@ -91,6 +93,16 @@ UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
     "LTXICLoRALoaderModelOnly": ["lora_name", "strength_model"],
     "Canny": ["low_threshold", "high_threshold"],
     "EmptyLTXVLatentVideo": ["width", "height", "length", "batch_size"],
+    "LTXVImgToVideoInplace": ["strength", "bypass"],
+    "LTXVSpatioTemporalTiledVAEDecode": [
+        "spatial_tiles",
+        "temporal_tile_length",
+        "spatial_overlap",
+        "temporal_overlap",
+        "last_frame_fix",
+        "working_device",
+        "working_dtype",
+    ],
     "LTXVEmptyLatentAudio": ["frames_number", "frame_rate", "batch_size"],
     "LTXVSetAudioVideoMaskByTime": [
         "start_time",
@@ -695,40 +707,120 @@ def _apply_node_overrides(prompt: dict[str, Any], node_overrides: Any) -> list[d
     return patched
 
 
+def _available_text_encoder_model_names() -> list[str]:
+    root = DEFAULT_MODELS_DIR / "text_encoders"
+    if not root.exists() or not root.is_dir():
+        return []
+
+    discovered: list[str] = []
+    seen: set[str] = set()
+    for file_path in sorted(root.rglob("*.safetensors")):
+        rel = file_path.relative_to(root).as_posix()
+        for candidate in (rel, file_path.name):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            discovered.append(candidate)
+    return discovered
+
+
+def _resolve_gemma_model_filename() -> str:
+    configured = os.getenv("GEMMA_MODEL_FILENAME", "").strip()
+    available = _available_text_encoder_model_names()
+
+    preferred = [
+        configured,
+        DEFAULT_GEMMA_MODEL_FILENAME,
+        Path(DEFAULT_GEMMA_MODEL_FILENAME).name,
+        LEGACY_GEMMA_MODEL_FILENAME,
+    ]
+
+    for candidate in preferred:
+        if not candidate:
+            continue
+        if not available or candidate in available:
+            return candidate
+
+    if available:
+        for candidate in available:
+            if "gemma" in candidate.lower():
+                return candidate
+        return available[0]
+
+    return Path(DEFAULT_GEMMA_MODEL_FILENAME).name
+
+
 def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
     patched: list[dict[str, Any]] = []
+    gemma_model_filename = _resolve_gemma_model_filename()
     for node_id, inputs in _iter_node_inputs(prompt):
         node_data = prompt.get(node_id)
         if not isinstance(node_data, dict):
             continue
-        if node_data.get("class_type") != "LTXVGemmaCLIPModelLoader":
-            continue
 
-        if inputs.get("ltxv_path") != DEFAULT_LTXV_MODEL_FILENAME:
-            old_value = inputs.get("ltxv_path")
-            inputs["ltxv_path"] = DEFAULT_LTXV_MODEL_FILENAME
+        class_type = node_data.get("class_type")
+        if class_type == "LTXVGemmaCLIPModelLoader":
+            if inputs.get("ltxv_path") != DEFAULT_LTXV_MODEL_FILENAME:
+                old_value = inputs.get("ltxv_path")
+                inputs["ltxv_path"] = DEFAULT_LTXV_MODEL_FILENAME
+                patched.append(
+                    {
+                        "node_id": node_id,
+                        "input": "ltxv_path",
+                        "old": old_value,
+                        "new": DEFAULT_LTXV_MODEL_FILENAME,
+                        "source": "compat_model_name",
+                    }
+                )
+
+            if inputs.get("gemma_path") != gemma_model_filename:
+                old_value = inputs.get("gemma_path")
+                inputs["gemma_path"] = gemma_model_filename
+                patched.append(
+                    {
+                        "node_id": node_id,
+                        "input": "gemma_path",
+                        "old": old_value,
+                        "new": gemma_model_filename,
+                        "source": "compat_model_name",
+                    }
+                )
+
+        if class_type == "LTXVImgToVideoInplace" and "strength" not in inputs:
+            inputs["strength"] = 1
             patched.append(
                 {
                     "node_id": node_id,
-                    "input": "ltxv_path",
-                    "old": old_value,
-                    "new": DEFAULT_LTXV_MODEL_FILENAME,
-                    "source": "compat_model_name",
+                    "input": "strength",
+                    "old": None,
+                    "new": 1,
+                    "source": "compat_missing_input",
                 }
             )
 
-        if inputs.get("gemma_path") != DEFAULT_GEMMA_MODEL_FILENAME:
-            old_value = inputs.get("gemma_path")
-            inputs["gemma_path"] = DEFAULT_GEMMA_MODEL_FILENAME
-            patched.append(
-                {
-                    "node_id": node_id,
-                    "input": "gemma_path",
-                    "old": old_value,
-                    "new": DEFAULT_GEMMA_MODEL_FILENAME,
-                    "source": "compat_model_name",
-                }
-            )
+        if class_type == "LTXVSpatioTemporalTiledVAEDecode":
+            decode_defaults = {
+                "spatial_tiles": 4,
+                "temporal_tile_length": 4,
+                "spatial_overlap": 16,
+                "temporal_overlap": 4,
+                "last_frame_fix": False,
+                "working_device": "auto",
+                "working_dtype": "auto",
+            }
+            for input_name, default_value in decode_defaults.items():
+                if input_name in inputs:
+                    continue
+                inputs[input_name] = default_value
+                patched.append(
+                    {
+                        "node_id": node_id,
+                        "input": input_name,
+                        "old": None,
+                        "new": default_value,
+                        "source": "compat_missing_input",
+                    }
+                )
 
     return patched
 
