@@ -86,7 +86,7 @@ Varsayilanlar otomatik gelir:
 - `PERSIST_WORKFLOWS=false`
 - `MODELS_AUTO_DOWNLOAD=true`
 - `DOWNLOAD_ONCE=true`
-- `REQUIRE_ALL_MODELS=false`
+- `REQUIRE_ALL_MODELS=true`
 - `HF_HUB_ENABLE_HF_TRANSFER=1`
 - `CLEANUP_JOB_INPUTS=true`
 - `CLEANUP_JOB_OUTPUTS=true`

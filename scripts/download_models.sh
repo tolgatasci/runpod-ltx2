@@ -10,12 +10,31 @@ WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
 GEMMA_BUNDLE_DIR="${MODEL_ROOT}/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
 GEMMA_PRIMARY_PATH="${GEMMA_BUNDLE_DIR}/model.safetensors"
+GEMMA_TOKENIZER_PATH="${GEMMA_BUNDLE_DIR}/tokenizer.model"
+GEMMA_PREPROCESSOR_PATH="${GEMMA_BUNDLE_DIR}/preprocessor_config.json"
+CHECKPOINT_PATH="${MODEL_ROOT}/checkpoints/ltx-2-19b-distilled.safetensors"
+SPATIAL_UPSCALER_PATH="${MODEL_ROOT}/latent_upscale_models/ltx-2-spatial-upscaler-x2-1.0.safetensors"
+IC_LORA_PATH="${MODEL_ROOT}/loras/ltx-2-19b-ic-lora-union-ref0.5.safetensors"
 
 mkdir -p "${MODEL_ROOT}"/{checkpoints,text_encoders,tokenizer,upscale_models,latent_upscale_models,loras,controlnet}
 
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
-  if [ ! -f "${GEMMA_PRIMARY_PATH}" ]; then
-    echo "[models] marker exists but Gemma bundle is missing, forcing model check."
+  missing_required=0
+  for required in \
+    "${CHECKPOINT_PATH}" \
+    "${GEMMA_PRIMARY_PATH}" \
+    "${GEMMA_TOKENIZER_PATH}" \
+    "${GEMMA_PREPROCESSOR_PATH}" \
+    "${SPATIAL_UPSCALER_PATH}" \
+    "${IC_LORA_PATH}"; do
+    if [ ! -f "${required}" ]; then
+      echo "[models] marker exists but required file is missing: ${required#${MODEL_ROOT}/}"
+      missing_required=1
+    fi
+  done
+
+  if [ "${missing_required}" -eq 1 ]; then
+    echo "[models] forcing model recheck."
     rm -f "${MARKER_FILE}"
   else
     echo "[models] marker file exists, skipping download."
