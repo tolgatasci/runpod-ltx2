@@ -66,6 +66,7 @@ cp .env.example .env
 HF_TOKEN=hf_xxx
 LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
 GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it.safetensors
+GEMMA_MODEL_FILENAME=gemma_text_encoder.safetensors
 GEMMA_TOKENIZER_SOURCE=hf://Lightricks/LTX-2/tokenizer/tokenizer.model
 GEMMA_PREPROCESSOR_SOURCE=hf://Lightricks/LTX-2/tokenizer/preprocessor_config.json
 SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors
@@ -118,6 +119,7 @@ RunPod `Environment Variables` alaninda `HF_TOKEN` + model kaynaklarini gir:
 HF_TOKEN=hf_xxx
 LTX2_MODEL_SOURCE=hf://Lightricks/LTX-2/ltx-2-19b-distilled-fp8.safetensors
 GEMMA_TEXT_ENCODER_SOURCE=hf://Comfy-Org/ltx-2/split_files/text_encoders/gemma_3_12B_it.safetensors
+GEMMA_MODEL_FILENAME=gemma_text_encoder.safetensors
 GEMMA_TOKENIZER_SOURCE=hf://Lightricks/LTX-2/tokenizer/tokenizer.model
 GEMMA_PREPROCESSOR_SOURCE=hf://Lightricks/LTX-2/tokenizer/preprocessor_config.json
 SPATIAL_UPSCALER_SOURCE=hf://Lightricks/LTX-2/ltx-2-spatial-upscaler-x2-1.0.safetensors

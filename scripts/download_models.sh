@@ -9,7 +9,8 @@ REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
 GEMMA_BUNDLE_DIR="${MODEL_ROOT}/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
-GEMMA_PRIMARY_PATH="${GEMMA_BUNDLE_DIR}/model.safetensors"
+GEMMA_PRIMARY_PATH="${MODEL_ROOT}/text_encoders/gemma_text_encoder.safetensors"
+GEMMA_COMPAT_PATH="${GEMMA_BUNDLE_DIR}/model.safetensors"
 GEMMA_TOKENIZER_PATH="${GEMMA_BUNDLE_DIR}/tokenizer.model"
 GEMMA_PREPROCESSOR_PATH="${GEMMA_BUNDLE_DIR}/preprocessor_config.json"
 CHECKPOINT_PATH="${MODEL_ROOT}/checkpoints/ltx-2-19b-distilled.safetensors"
@@ -181,7 +182,7 @@ MODEL_ENV_KEYS=(
 
 MODEL_PATHS=(
   "checkpoints/ltx-2-19b-distilled.safetensors"
-  "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors"
+  "text_encoders/gemma_text_encoder.safetensors"
   "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/tokenizer.model"
   "text_encoders/gemma-3-12b-it-qat-q4_0-unquantized/preprocessor_config.json"
   "latent_upscale_models/ltx-2-spatial-upscaler-x2-1.0.safetensors"
@@ -233,6 +234,14 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
     failed=$((failed + 1))
   fi
 done
+
+mkdir -p "${GEMMA_BUNDLE_DIR}"
+if [ -f "${GEMMA_PRIMARY_PATH}" ] && [ ! -e "${GEMMA_COMPAT_PATH}" ]; then
+  ln -sf ../gemma_text_encoder.safetensors "${GEMMA_COMPAT_PATH}"
+fi
+if [ -f "${GEMMA_COMPAT_PATH}" ] && [ ! -e "${GEMMA_PRIMARY_PATH}" ]; then
+  ln -sf gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors "${GEMMA_PRIMARY_PATH}"
+fi
 
 if [ "${failed}" -gt 0 ] && [ "${REQUIRE_ALL_MODELS}" = "true" ]; then
   echo "[models] one or more model downloads failed and REQUIRE_ALL_MODELS=true." >&2

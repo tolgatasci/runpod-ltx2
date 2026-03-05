@@ -51,7 +51,7 @@ PROMPT_ALIASES = {
 
 INPUT_IMAGE_ALIASES = ["image", "image_path", "input_image", "reference_image"]
 DEFAULT_LTXV_MODEL_FILENAME = "ltx-2-19b-distilled.safetensors"
-DEFAULT_GEMMA_MODEL_FILENAME = "gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors"
+DEFAULT_GEMMA_MODEL_FILENAME = os.getenv("GEMMA_MODEL_FILENAME", "gemma_text_encoder.safetensors")
 LEGACY_GEMMA_MODEL_FILENAME = "gemma_text_encoder.safetensors"
 
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
@@ -715,12 +715,11 @@ def _available_text_encoder_model_names() -> list[str]:
     discovered: list[str] = []
     seen: set[str] = set()
     for file_path in sorted(root.rglob("*.safetensors")):
-        rel = file_path.relative_to(root).as_posix()
-        for candidate in (rel, file_path.name):
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            discovered.append(candidate)
+        candidate = file_path.name
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        discovered.append(candidate)
     return discovered
 
 
@@ -730,9 +729,9 @@ def _resolve_gemma_model_filename() -> str:
 
     preferred = [
         configured,
-        DEFAULT_GEMMA_MODEL_FILENAME,
-        Path(DEFAULT_GEMMA_MODEL_FILENAME).name,
         LEGACY_GEMMA_MODEL_FILENAME,
+        DEFAULT_GEMMA_MODEL_FILENAME,
+        "model.safetensors",
     ]
 
     for candidate in preferred:
@@ -747,7 +746,41 @@ def _resolve_gemma_model_filename() -> str:
                 return candidate
         return available[0]
 
-    return Path(DEFAULT_GEMMA_MODEL_FILENAME).name
+    return LEGACY_GEMMA_MODEL_FILENAME
+
+
+def _history_execution_error(history_entry: dict[str, Any]) -> dict[str, Any] | None:
+    status = history_entry.get("status")
+    if not isinstance(status, dict):
+        return None
+    messages = status.get("messages")
+    if not isinstance(messages, list):
+        return None
+
+    for message in messages:
+        if not isinstance(message, list) or len(message) != 2:
+            continue
+        message_type, payload = message
+        if message_type == "execution_error" and isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _raise_if_history_failed(history_entry: dict[str, Any]) -> None:
+    error = _history_execution_error(history_entry)
+    if not error:
+        return
+
+    node_id = error.get("node_id")
+    node_type = error.get("node_type")
+    exc_type = error.get("exception_type")
+    exc_message = str(error.get("exception_message", "")).strip()
+
+    detail = f"ComfyUI execution error at node {node_id} ({node_type}): {exc_type}"
+    if exc_message:
+        detail = f"{detail} - {exc_message}"
+
+    raise RuntimeError(detail)
 
 
 def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1121,6 +1154,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         timeout_s = _to_float(req.get("timeout_seconds", DEFAULT_JOB_TIMEOUT), "timeout_seconds")
         poll_s = _to_float(req.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL), "poll_interval_seconds")
         history_entry = _wait_for_history(comfy_url, prompt_id, timeout_s=timeout_s, poll_s=poll_s)
+        _raise_if_history_failed(history_entry)
         outputs = _extract_outputs(history_entry, comfy_url)
 
         return_inline_base64 = _to_bool(req.get("return_output_base64"), False)

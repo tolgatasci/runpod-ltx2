@@ -180,7 +180,11 @@ mkdir -p "${HF_HOME}"
 ensure_placeholder_video() {
   local placeholder="${COMFYUI_INPUT_DIR}/LTX-2_V2V_00014-audio.mp4"
   if [ -f "${placeholder}" ]; then
-    return 0
+    if ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
+      -of default=noprint_wrappers=1:nokey=1 "${placeholder}" >/dev/null 2>&1; then
+      return 0
+    fi
+    rm -f "${placeholder}" || true
   fi
 
   echo "[entrypoint] creating placeholder video input: $(basename "${placeholder}")"
