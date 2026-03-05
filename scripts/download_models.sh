@@ -98,13 +98,8 @@ try:
     os.link(local_path, dst_path)
 except OSError:
     unlink_existing(dst_path)
-    # Cross-device or fs restrictions: try symlink before full copy.
-    try:
-        rel_src = os.path.relpath(local_path, out_dir)
-        os.symlink(rel_src, dst_path)
-    except OSError:
-        unlink_existing(dst_path)
-        shutil.copy2(local_path, dst_path)
+    # Avoid external symlinks in models/, ComfyUI can ignore them.
+    shutil.copy2(local_path, dst_path)
 PY
 }
 
@@ -193,6 +188,55 @@ MODEL_PATHS=(
   "loras/ltx-2-19b-lora-camera-control-static.safetensors"
 )
 
+is_valid_model_file() {
+  local path="$1"
+  local resolved=""
+
+  if [ -L "${path}" ]; then
+    resolved="$(readlink -f "${path}" 2>/dev/null || true)"
+    if [ -z "${resolved}" ] || [ ! -f "${resolved}" ]; then
+      return 1
+    fi
+    case "${resolved}" in
+      "${MODEL_ROOT}"/*) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  [ -f "${path}" ]
+}
+
+cleanup_external_model_symlinks() {
+  local removed=0
+  local symlink=""
+  local resolved=""
+
+  if [ ! -d "${MODEL_ROOT}" ]; then
+    return 0
+  fi
+
+  while IFS= read -r -d '' symlink; do
+    resolved="$(readlink -f "${symlink}" 2>/dev/null || true)"
+    if [ -z "${resolved}" ] || [ ! -f "${resolved}" ]; then
+      rm -f "${symlink}" || true
+      removed=$((removed + 1))
+      continue
+    fi
+    case "${resolved}" in
+      "${MODEL_ROOT}"/*) ;;
+      *)
+        rm -f "${symlink}" || true
+        removed=$((removed + 1))
+        ;;
+    esac
+  done < <(find "${MODEL_ROOT}" -type l -print0 2>/dev/null)
+
+  if [ "${removed}" -gt 0 ]; then
+    echo "[models] removed ${removed} external/broken model symlink(s)."
+    rm -f "${MARKER_FILE}" "${SOURCE_MANIFEST_FILE}" || true
+  fi
+}
+
 write_source_manifest() {
   local manifest_path="$1"
   {
@@ -215,6 +259,8 @@ source_manifest_matches_current() {
   return 1
 }
 
+cleanup_external_model_symlinks
+
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
   missing_required=0
   for required in \
@@ -225,7 +271,7 @@ if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
     "${GEMMA_PREPROCESSOR_PATH}" \
     "${SPATIAL_UPSCALER_PATH}" \
     "${IC_LORA_PATH}"; do
-    if [ ! -f "${required}" ]; then
+    if ! is_valid_model_file "${required}"; then
       echo "[models] marker exists but required file is missing: ${required#${MODEL_ROOT}/}"
       missing_required=1
     fi
@@ -269,7 +315,7 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
   fi
 
   if [ "${env_key}" = "GEMMA_TEXT_ENCODER_SOURCE" ] && [[ "${source}" =~ ^hf://[^/]+/[^/]+/?$ ]]; then
-    if [ -f "${destination}" ] && [ "${refresh_this_model}" -eq 0 ]; then
+    if is_valid_model_file "${destination}" && [ "${refresh_this_model}" -eq 0 ]; then
       echo "[models] exists: ${relative_path}"
       continue
     fi
@@ -284,7 +330,7 @@ for i in "${!MODEL_ENV_KEYS[@]}"; do
     continue
   fi
 
-  if [ -f "${destination}" ] && [ "${refresh_this_model}" -eq 0 ]; then
+  if is_valid_model_file "${destination}" && [ "${refresh_this_model}" -eq 0 ]; then
     echo "[models] exists: ${relative_path}"
     continue
   fi
