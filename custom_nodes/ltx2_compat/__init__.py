@@ -44,12 +44,33 @@ class CM_FloatToInt:
         return (int(round(float(a))),)
 
 
+class ImpactExecutionOrderController:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "signal": (ANY_TYPE, {"forceInput": True}),
+                "value": (ANY_TYPE, {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = (ANY_TYPE, ANY_TYPE)
+    RETURN_NAMES = ("signal", "value")
+    FUNCTION = "passthrough"
+    CATEGORY = "LTX2/Compat"
+
+    def passthrough(self, signal, value):
+        return (signal, value)
+
+
 NODE_CLASS_MAPPINGS = {
     "InversionDemoLazySwitch": InversionDemoLazySwitch,
     "CM_FloatToInt": CM_FloatToInt,
+    "ImpactExecutionOrderController": ImpactExecutionOrderController,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InversionDemoLazySwitch": "Bypass Enhancer Switch",
     "CM_FloatToInt": "Float To Int (Compat)",
+    "ImpactExecutionOrderController": "Execution Order Controller (Compat)",
 }
