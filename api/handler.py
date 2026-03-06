@@ -1025,7 +1025,7 @@ def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
         if class_type == "LTXVSpatioTemporalTiledVAEDecode":
             decode_defaults = {
                 "spatial_tiles": 4,
-                "temporal_tile_length": 4,
+                "temporal_tile_length": 6,
                 "spatial_overlap": 8,
                 "temporal_overlap": 4,
                 "last_frame_fix": False,
@@ -1062,6 +1062,29 @@ def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
                         "source": "compat_clamp",
                     }
                 )
+
+            try:
+                temporal_overlap_value = int(inputs.get("temporal_overlap"))
+            except (TypeError, ValueError):
+                temporal_overlap_value = None
+            try:
+                temporal_tile_length_value = int(inputs.get("temporal_tile_length"))
+            except (TypeError, ValueError):
+                temporal_tile_length_value = None
+
+            if temporal_overlap_value is not None and temporal_tile_length_value is not None:
+                min_valid_tile = temporal_overlap_value + 2
+                if temporal_tile_length_value < min_valid_tile:
+                    inputs["temporal_tile_length"] = min_valid_tile
+                    patched.append(
+                        {
+                            "node_id": node_id,
+                            "input": "temporal_tile_length",
+                            "old": temporal_tile_length_value,
+                            "new": min_valid_tile,
+                            "source": "compat_clamp",
+                        }
+                    )
 
     return patched
 
