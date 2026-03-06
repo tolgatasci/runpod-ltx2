@@ -238,6 +238,8 @@ Not: Worker UI workflow (`nodes`) gelirse yine otomatik API prompt'a cevirebilir
 - Dilersen bu davranisi kapatabilirsin: `auto_convert_ui=false`
 - Hala API graph vermek istersen `prompt` veya `workflow_api` kullanabilirsin (ornek: `workflow_api=image_to_video.api.json`).
 - ComfyUI `/prompt` 400 donerse hata detayi artik response icinde gorunur (node_errors dahil).
+- Worker `/prompt` isteginde otomatik `outputs_to_execute` set eder; default olarak `SaveVideo/SaveImage` zinciri calisir.
+- Torch `<2.6` ise Gemma prompt enhancer otomatik bypass edilir (`DISABLE_GEMMA_PROMPT_ENHANCER=auto`).
 
 Ek notlar:
 - `wait=true` iken job bitince output dosyalari default olarak silinir (`CLEANUP_JOB_OUTPUTS=true`).

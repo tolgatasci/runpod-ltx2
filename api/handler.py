@@ -1066,6 +1066,102 @@ def _normalize_ltx_model_inputs(prompt: dict[str, Any]) -> list[dict[str, Any]]:
     return patched
 
 
+def _torch_major_minor_version() -> tuple[int, int] | None:
+    try:
+        import torch  # type: ignore
+    except Exception:
+        return None
+
+    raw_version = str(getattr(torch, "__version__", "")).strip()
+    if not raw_version:
+        return None
+    normalized = raw_version.split("+", 1)[0]
+    parts = normalized.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+
+
+def _should_disable_gemma_enhancer() -> bool:
+    configured = os.getenv("DISABLE_GEMMA_PROMPT_ENHANCER", "auto").strip().lower()
+    if configured in {"1", "true", "yes", "y", "on"}:
+        return True
+    if configured in {"0", "false", "no", "n", "off"}:
+        return False
+
+    version = _torch_major_minor_version()
+    if version is None:
+        return False
+    return version < (2, 6)
+
+
+def _disable_gemma_enhancer_if_needed(prompt: dict[str, Any]) -> list[dict[str, Any]]:
+    if not _should_disable_gemma_enhancer():
+        return []
+
+    enhancer_fallbacks: dict[str, Any] = {}
+    for node_id, node_data in prompt.items():
+        if not isinstance(node_data, dict):
+            continue
+        if node_data.get("class_type") != "LTXVGemmaEnhancePrompt":
+            continue
+        inputs = node_data.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        if "prompt" not in inputs:
+            continue
+        enhancer_fallbacks[str(node_id)] = copy.deepcopy(inputs.get("prompt"))
+
+    if not enhancer_fallbacks:
+        return []
+
+    patched: list[dict[str, Any]] = []
+    for node_id, inputs in _iter_node_inputs(prompt):
+        node_data = prompt.get(node_id)
+        if not isinstance(node_data, dict):
+            continue
+        class_type = str(node_data.get("class_type", ""))
+
+        for input_name, input_value in list(inputs.items()):
+            if not (isinstance(input_value, list) and len(input_value) == 2):
+                continue
+            source_node = str(input_value[0])
+            if source_node not in enhancer_fallbacks:
+                continue
+            fallback_value = copy.deepcopy(enhancer_fallbacks[source_node])
+            inputs[input_name] = fallback_value
+            patched.append(
+                {
+                    "node_id": node_id,
+                    "input": input_name,
+                    "old": input_value,
+                    "new": fallback_value,
+                    "source": "compat_disable_gemma_enhancer",
+                }
+            )
+
+        if class_type == "InversionDemoLazySwitch":
+            on_true = inputs.get("on_true")
+            references_enhancer = isinstance(on_true, list) and len(on_true) == 2 and str(on_true[0]) in enhancer_fallbacks
+            if references_enhancer and inputs.get("switch") is not False:
+                old_value = inputs.get("switch")
+                inputs["switch"] = False
+                patched.append(
+                    {
+                        "node_id": node_id,
+                        "input": "switch",
+                        "old": old_value,
+                        "new": False,
+                        "source": "compat_disable_gemma_enhancer",
+                    }
+                )
+
+    return patched
+
+
 def _safe_filename(filename: str) -> str:
     safe = Path(str(filename)).name.strip()
     if not safe or safe in {".", ".."}:
@@ -1406,6 +1502,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         patched.extend(_apply_input_image(prompt_graph, req))
         patched.extend(_normalize_ltx_model_inputs(prompt_graph))
         patched.extend(_apply_node_overrides(prompt_graph, req.get("node_overrides")))
+        patched.extend(_disable_gemma_enhancer_if_needed(prompt_graph))
         _ensure_models_ready()
 
         client_id = str(req.get("client_id", uuid.uuid4()))
