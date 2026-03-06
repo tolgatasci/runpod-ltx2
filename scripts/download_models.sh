@@ -139,11 +139,62 @@ snapshot_download(
 PY
 }
 
+fetch_hf_url() {
+  local source="$1"
+  local destination="$2"
+
+  python3 - "${source}" "$(dirname "${destination}")" "$(basename "${destination}")" <<'PY'
+import os
+import shutil
+import sys
+from urllib.parse import urlparse
+
+from huggingface_hub import hf_hub_download
+
+url, out_dir, out_name = sys.argv[1:4]
+token = os.environ.get("HF_TOKEN")
+
+parsed = urlparse(url)
+if parsed.netloc != "huggingface.co":
+    raise ValueError("not_hf_url")
+
+parts = [part for part in parsed.path.split("/") if part]
+if len(parts) < 5 or parts[2] != "resolve":
+    raise ValueError("unsupported_hf_url_format")
+
+repo_id = f"{parts[0]}/{parts[1]}"
+revision = parts[3]
+filename = "/".join(parts[4:])
+local_path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, token=token)
+
+os.makedirs(out_dir, exist_ok=True)
+dst_path = os.path.join(out_dir, out_name)
+
+if os.path.lexists(dst_path):
+    if os.path.isdir(dst_path) and not os.path.islink(dst_path):
+        shutil.rmtree(dst_path)
+    else:
+        os.unlink(dst_path)
+
+try:
+    os.link(local_path, dst_path)
+except OSError:
+    if os.path.lexists(dst_path):
+        os.unlink(dst_path)
+    shutil.copy2(local_path, dst_path)
+PY
+}
+
 fetch_model() {
   local source="$1"
   local destination="$2"
 
-  if [[ "${source}" =~ ^https?:// ]]; then
+  if [[ "${source}" =~ ^https?://huggingface\.co/ ]]; then
+    if ! fetch_hf_url "${source}" "${destination}"; then
+      echo "[models] falling back to wget for ${source}" >&2
+      fetch_http "${source}" "${destination}"
+    fi
+  elif [[ "${source}" =~ ^https?:// ]]; then
     fetch_http "${source}" "${destination}"
   elif [[ "${source}" =~ ^hf:// ]]; then
     fetch_hf "${source}" "${destination}"

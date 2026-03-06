@@ -85,9 +85,10 @@ Varsayilanlar otomatik gelir:
 - `PERSIST_INPUT=false`
 - `PERSIST_OUTPUT=false`
 - `PERSIST_WORKFLOWS=false`
-- `MODELS_AUTO_DOWNLOAD=true`
+- `MODELS_AUTO_DOWNLOAD=auto`
+- `SERVERLESS_STARTUP_MODEL_DOWNLOAD=false`
 - `DOWNLOAD_ONCE=true`
-- `REQUIRE_ALL_MODELS=true`
+- `REQUIRE_ALL_MODELS=false`
 - `HF_HUB_ENABLE_HF_TRANSFER=1`
 - `CLEANUP_JOB_INPUTS=true`
 - `CLEANUP_JOB_OUTPUTS=true`
@@ -129,6 +130,13 @@ CAMERA_MOTION_LORA_SOURCE=hf://Lightricks/LTX-2-19b-LoRA-Camera-Control-Static/l
 ```
 
 Container ilk acilista model kaynaklari tanimliysa model bootstrap scripti indirir. Sonraki acilislarda model dosyalari ve marker (`.ltx2_models_ready`) network volume icinde kaldigi icin tekrar indirme yapmaz.
+
+`MODELS_AUTO_DOWNLOAD=auto` ile varsayilan davranis:
+
+- normal (server) modda startup sirasinda indirir
+- `RUNPOD_SERVERLESS=true` modda startup indirmeyi atlar, ilk istekte handler icinden bootstrap eder (init timeout riskini azaltir)
+
+Not: Hugging Face kaynaklari icin `hf://...` kullanman hiz/resume acisindan en iyi secimdir. `https://huggingface.co/...` verilirse script otomatik olarak `hf_hub_download` yolunu deneyecek, sadece gerekirse `wget` fallback kullanacaktir.
 
 Default davranis: network volume'da sadece modeller ve HF cache kalici tutulur. `input/output/workflow` klasorleri runtime storage'da acilir ve otomatik prune/cleanup ile temizlenir.
 
@@ -181,6 +189,7 @@ RUNPOD_SERVERLESS=true
 Bu modda worker request uzerinden kalite ayarlarini degistirebilirsin:
 
 - `ping=true` (workflow calistirmadan health-check)
+- `bootstrap_models=true` (sadece model bootstrap yapar, generation calistirmaz)
 - `duration_seconds` (otomatik `frames` hesaplar)
 - `fps`
 - `steps`

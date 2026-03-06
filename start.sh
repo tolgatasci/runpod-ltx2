@@ -203,11 +203,20 @@ if [ -d "${LTX2_HOME}/workflows" ] && compgen -G "${LTX2_HOME}/workflows/*.json"
   cp -n "${LTX2_HOME}"/workflows/*.json "${COMFYUI_WORKFLOWS_DIR}/" 2>/dev/null || true
 fi
 
-if [ "${MODELS_AUTO_DOWNLOAD:-true}" = "true" ]; then
+AUTO_DOWNLOAD_MODELS="${MODELS_AUTO_DOWNLOAD:-auto}"
+if [ "${AUTO_DOWNLOAD_MODELS}" = "auto" ]; then
+  if is_true "${RUNPOD_SERVERLESS:-false}"; then
+    AUTO_DOWNLOAD_MODELS="${SERVERLESS_STARTUP_MODEL_DOWNLOAD:-false}"
+  else
+    AUTO_DOWNLOAD_MODELS="true"
+  fi
+fi
+
+if is_true "${AUTO_DOWNLOAD_MODELS}"; then
   echo "[entrypoint] model auto-download is enabled."
   "${LTX2_HOME}/scripts/download_models.sh"
 else
-  echo "[entrypoint] MODELS_AUTO_DOWNLOAD=false, skipping model bootstrap."
+  echo "[entrypoint] model auto-download is disabled at startup (MODELS_AUTO_DOWNLOAD=${AUTO_DOWNLOAD_MODELS})."
 fi
 
 start_runtime_pruner

@@ -1204,6 +1204,10 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         if _to_bool(req.get("ping"), False):
             return _healthcheck(comfy_url)
 
+        if _to_bool(req.get("bootstrap_models"), False):
+            _ensure_models_ready()
+            return {"ok": True, "mode": "bootstrap", "models_ready": True}
+
         created_input_file = _materialize_input_image(req)
 
         prompt, prompt_source = _load_prompt_from_request(req)
