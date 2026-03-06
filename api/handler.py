@@ -4,6 +4,7 @@ import copy
 import json
 import mimetypes
 import os
+import shutil
 import subprocess
 import time
 import uuid
@@ -772,18 +773,63 @@ def _resolve_gemma_model_filename() -> str | None:
     return None
 
 
+def _repair_required_model_path(expected_path: Path, filename: str) -> bool:
+    if expected_path.is_file():
+        return True
+
+    roots: list[Path] = []
+    for candidate in [
+        DEFAULT_MODELS_DIR,
+        DEFAULT_MODELS_DIR.parent,
+        Path(COMFYUI_DIR) / "models",
+        Path("/runpod-volume"),
+        Path("/workspace"),
+    ]:
+        if candidate.exists():
+            roots.append(candidate)
+
+    seen: set[str] = set()
+    for root in roots:
+        root_key = str(root.resolve()) if root.exists() else str(root)
+        if root_key in seen:
+            continue
+        seen.add(root_key)
+        for found in root.rglob(filename):
+            try:
+                if not found.is_file():
+                    continue
+                if found.resolve() == expected_path.resolve():
+                    return True
+            except OSError:
+                continue
+
+            try:
+                expected_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(found, expected_path)
+                return expected_path.is_file()
+            except OSError:
+                continue
+
+    return expected_path.is_file()
+
+
 def _assert_required_model_files() -> None:
     missing: list[str] = []
 
     checkpoint = DEFAULT_MODELS_DIR / "checkpoints" / DEFAULT_LTXV_MODEL_FILENAME
+    _repair_required_model_path(checkpoint, DEFAULT_LTXV_MODEL_FILENAME)
     if not checkpoint.is_file():
         missing.append(str(checkpoint))
 
     gemma_name = _resolve_gemma_model_filename()
     if not gemma_name:
-        missing.append(str(DEFAULT_MODELS_DIR / "text_encoders" / LEGACY_GEMMA_MODEL_FILENAME))
+        fallback_gemma = DEFAULT_MODELS_DIR / "text_encoders" / LEGACY_GEMMA_MODEL_FILENAME
+        _repair_required_model_path(fallback_gemma, LEGACY_GEMMA_MODEL_FILENAME)
+        if not fallback_gemma.is_file():
+            missing.append(str(fallback_gemma))
     else:
         gemma_path = DEFAULT_MODELS_DIR / "text_encoders" / gemma_name
+        _repair_required_model_path(gemma_path, Path(gemma_name).name)
         if not gemma_path.is_file():
             missing.append(str(gemma_path))
 
