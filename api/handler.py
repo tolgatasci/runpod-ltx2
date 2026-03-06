@@ -1270,6 +1270,9 @@ def _submit_prompt(comfy_url: str, prompt: dict[str, Any], client_id: str) -> di
     output_nodes = _resolve_output_nodes_for_execution(prompt)
     payload: dict[str, Any] = {"prompt": prompt, "client_id": client_id}
     if output_nodes:
+        # ComfyUI queue API uses "partial_execution_targets" to run only selected outputs.
+        payload["partial_execution_targets"] = output_nodes
+        # Backward compatibility for older forks/custom builds that may still read this key.
         payload["outputs_to_execute"] = output_nodes
 
     response = requests.post(
