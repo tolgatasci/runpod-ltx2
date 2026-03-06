@@ -81,6 +81,7 @@ repo_id, filename, out_dir, out_name = sys.argv[1:5]
 token = os.environ.get("HF_TOKEN")
 
 local_path = hf_hub_download(repo_id=repo_id, filename=filename, token=token)
+local_path = os.path.realpath(local_path)
 os.makedirs(out_dir, exist_ok=True)
 dst_path = os.path.join(out_dir, out_name)
 
@@ -167,6 +168,7 @@ repo_id = f"{parts[0]}/{parts[1]}"
 revision = parts[3]
 filename = "/".join(parts[4:])
 local_path = hf_hub_download(repo_id=repo_id, filename=filename, revision=revision, token=token)
+local_path = os.path.realpath(local_path)
 
 os.makedirs(out_dir, exist_ok=True)
 dst_path = os.path.join(out_dir, out_name)
