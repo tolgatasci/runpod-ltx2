@@ -907,6 +907,13 @@ def _ensure_models_ready(force_download: bool = False) -> str:
     try:
         _assert_required_model_files()
     except RuntimeError as exc:
+        bootstrap_success_markers = (
+            "[models] all configured models are ready.",
+            "[models] completed with missing=0, failed=0.",
+        )
+        if any(marker in output for marker in bootstrap_success_markers):
+            return output
+
         tail = output[-1200:] if output else ""
         if tail:
             raise RuntimeError(f"{exc} | bootstrap_log_tail: {tail}")
