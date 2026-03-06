@@ -716,8 +716,17 @@ def _available_text_encoder_model_names() -> list[str]:
     if not root.exists() or not root.is_dir():
         return []
 
-    # ComfyUI-LTX loader expects the selectable file list under text_encoders root.
-    return sorted(path.name for path in root.glob("*.safetensors") if path.is_file())
+    # Include nested safetensors files so gemma_path can target bundle files like
+    # "gemma-3-12b-it-qat-q4_0-unquantized/model.safetensors".
+    names: list[str] = []
+    for path in root.rglob("*.safetensors"):
+        if not path.is_file():
+            continue
+        try:
+            names.append(path.relative_to(root).as_posix())
+        except ValueError:
+            continue
+    return sorted(set(names))
 
 
 def _ensure_gemma_compat_paths() -> None:
@@ -748,9 +757,11 @@ def _resolve_gemma_model_filename() -> str | None:
     _ensure_gemma_compat_paths()
     configured = os.getenv("GEMMA_MODEL_FILENAME", "").strip()
     available = _available_text_encoder_model_names()
+    nested_compat = f"{GEMMA_BUNDLE_SUBDIR}/{GEMMA_COMPAT_MODEL_FILENAME}"
 
     preferred = [
         configured,
+        nested_compat,
         LEGACY_GEMMA_MODEL_FILENAME,
         DEFAULT_GEMMA_MODEL_FILENAME,
     ]
