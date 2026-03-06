@@ -1162,6 +1162,81 @@ def _disable_gemma_enhancer_if_needed(prompt: dict[str, Any]) -> list[dict[str, 
     return patched
 
 
+def _fix_ic_lora_guidance_for_frame_overrides(prompt: dict[str, Any], tuning_values: dict[str, Any]) -> list[dict[str, Any]]:
+    # LTX image_to_video workflow can build IC-LoRA conditioning from a loaded reference video.
+    # When API callers override frame count, this may desync conditioning length vs latent length.
+    if "frames" not in tuning_values:
+        return []
+
+    load_image_nodes = [
+        str(node_id)
+        for node_id, node_data in prompt.items()
+        if isinstance(node_data, dict) and node_data.get("class_type") == "LoadImage"
+    ]
+    if not load_image_nodes:
+        return []
+    primary_load_image_node = load_image_nodes[0]
+
+    patched: list[dict[str, Any]] = []
+    for node_id, node_data in prompt.items():
+        if not isinstance(node_data, dict) or node_data.get("class_type") != "LTXAddVideoICLoRAGuide":
+            continue
+        inputs = node_data.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+
+        image_ref = inputs.get("image")
+        if isinstance(image_ref, list) and len(image_ref) == 2:
+            source_node_id = str(image_ref[0])
+            source_node = prompt.get(source_node_id)
+            source_type = source_node.get("class_type") if isinstance(source_node, dict) else None
+
+            if source_type == "Canny" and isinstance(source_node, dict):
+                source_inputs = source_node.get("inputs")
+                if isinstance(source_inputs, dict):
+                    new_canny_image_ref: list[Any] = [primary_load_image_node, 0]
+                    old_canny_image_ref = source_inputs.get("image")
+                    if old_canny_image_ref != new_canny_image_ref:
+                        source_inputs["image"] = new_canny_image_ref
+                        patched.append(
+                            {
+                                "node_id": source_node_id,
+                                "input": "image",
+                                "old": old_canny_image_ref,
+                                "new": new_canny_image_ref,
+                                "source": "compat_ic_lora_frames",
+                            }
+                        )
+            else:
+                new_guide_image_ref: list[Any] = [primary_load_image_node, 0]
+                if image_ref != new_guide_image_ref:
+                    inputs["image"] = new_guide_image_ref
+                    patched.append(
+                        {
+                            "node_id": str(node_id),
+                            "input": "image",
+                            "old": image_ref,
+                            "new": new_guide_image_ref,
+                            "source": "compat_ic_lora_frames",
+                        }
+                    )
+
+        if inputs.get("frame_idx") != 0:
+            old_frame_idx = inputs.get("frame_idx")
+            inputs["frame_idx"] = 0
+            patched.append(
+                {
+                    "node_id": str(node_id),
+                    "input": "frame_idx",
+                    "old": old_frame_idx,
+                    "new": 0,
+                    "source": "compat_ic_lora_frames",
+                }
+            )
+
+    return patched
+
+
 def _safe_filename(filename: str) -> str:
     safe = Path(str(filename)).name.strip()
     if not safe or safe in {".", ".."}:
@@ -1505,6 +1580,7 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
         patched.extend(_apply_input_image(prompt_graph, req))
         patched.extend(_normalize_ltx_model_inputs(prompt_graph))
         patched.extend(_apply_node_overrides(prompt_graph, req.get("node_overrides")))
+        patched.extend(_fix_ic_lora_guidance_for_frame_overrides(prompt_graph, tuning_values))
         patched.extend(_disable_gemma_enhancer_if_needed(prompt_graph))
         _ensure_models_ready()
 
