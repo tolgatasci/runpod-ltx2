@@ -110,15 +110,22 @@ fetch_hf_repo() {
   local destination_dir="$2"
 
   local ref="${source#hf://}"
-  local repo extra
-  repo="$(echo "${ref}" | cut -d'/' -f1-2)"
-  extra="$(echo "${ref}" | cut -d'/' -f3-)"
+  local org rest repo extra
+  org="${ref%%/*}"
+  rest="${ref#*/}"
 
-  if [ -z "${repo}" ] || [ "${repo}" = "${ref}" ]; then
+  if [ -z "${org}" ] || [ -z "${rest}" ] || [ "${org}" = "${ref}" ]; then
     echo "[models] invalid hf repo format: ${source}" >&2
     return 1
   fi
-  if [ -n "${extra}" ] && [ "${extra}" != "${ref}" ]; then
+
+  repo="${org}/${rest%%/*}"
+  extra=""
+  if [ "${rest}" != "${rest%%/*}" ]; then
+    extra="${rest#*/}"
+  fi
+
+  if [ -n "${extra}" ]; then
     echo "[models] hf repo download expects repository root (hf://org/repo): ${source}" >&2
     return 1
   fi
