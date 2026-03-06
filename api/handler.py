@@ -61,6 +61,13 @@ GEMMA_COMPAT_MODEL_FILENAME = "model.safetensors"
 UI_WORKFLOW_SKIP_TYPES = {"MarkdownNote"}
 UI_WORKFLOW_SKIP_MODES = {2, 4}  # NEVER, BYPASS
 UI_WORKFLOW_OUTPUT_TYPES = {"SaveVideo", "SaveImage", "PreviewImage", "SaveAudio"}
+API_PROMPT_OUTPUT_CLASS_HINTS = {
+    "SaveVideo",
+    "SaveImage",
+    "PreviewImage",
+    "SaveAudio",
+    "VHS_VideoCombine",
+}
 UI_WIDGET_INPUT_FALLBACKS: dict[str, list[str]] = {
     # Core image/video loaders
     "LoadImage": ["image"],
@@ -1164,9 +1171,14 @@ def _materialize_input_image(req: dict[str, Any]) -> Path | None:
 
 
 def _submit_prompt(comfy_url: str, prompt: dict[str, Any], client_id: str) -> dict[str, Any]:
+    output_nodes = _resolve_output_nodes_for_execution(prompt)
+    payload: dict[str, Any] = {"prompt": prompt, "client_id": client_id}
+    if output_nodes:
+        payload["outputs_to_execute"] = output_nodes
+
     response = requests.post(
         f"{comfy_url}/prompt",
-        json={"prompt": prompt, "client_id": client_id},
+        json=payload,
         timeout=DEFAULT_HTTP_TIMEOUT,
     )
     if response.status_code >= 400:
@@ -1182,6 +1194,54 @@ def _submit_prompt(comfy_url: str, prompt: dict[str, Any], client_id: str) -> di
     if "prompt_id" not in payload:
         raise RuntimeError(f"Invalid ComfyUI response: {payload}")
     return payload
+
+
+def _resolve_output_nodes_for_execution(prompt: dict[str, Any]) -> list[str]:
+    if not isinstance(prompt, dict):
+        return []
+
+    output_nodes: list[str] = []
+    outgoing_count: dict[str, int] = {}
+    incoming_count: dict[str, int] = {}
+
+    for node_id, node_data in prompt.items():
+        node_key = str(node_id)
+        if not isinstance(node_data, dict):
+            continue
+
+        class_type = node_data.get("class_type")
+        if isinstance(class_type, str):
+            normalized = class_type.strip()
+            if (
+                normalized in API_PROMPT_OUTPUT_CLASS_HINTS
+                or normalized in UI_WORKFLOW_OUTPUT_TYPES
+                or normalized.startswith("Save")
+            ):
+                output_nodes.append(node_key)
+
+        inputs = node_data.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for value in inputs.values():
+            if not (isinstance(value, list) and len(value) == 2):
+                continue
+            source_node = value[0]
+            if source_node is None:
+                continue
+            source_key = str(source_node)
+            outgoing_count[source_key] = outgoing_count.get(source_key, 0) + 1
+            incoming_count[node_key] = incoming_count.get(node_key, 0) + 1
+
+    if output_nodes:
+        return sorted(set(output_nodes), key=lambda value: (len(value), value))
+
+    # Fallback: execute terminal nodes with incoming edges only.
+    terminals: list[str] = []
+    for node_id in prompt:
+        node_key = str(node_id)
+        if outgoing_count.get(node_key, 0) == 0 and incoming_count.get(node_key, 0) > 0:
+            terminals.append(node_key)
+    return sorted(set(terminals), key=lambda value: (len(value), value))
 
 
 def _wait_for_history(comfy_url: str, prompt_id: str, timeout_s: float, poll_s: float) -> dict[str, Any]:
