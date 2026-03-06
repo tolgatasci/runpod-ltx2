@@ -795,36 +795,78 @@ def _assert_required_model_files() -> None:
         )
 
 
-def _ensure_models_ready() -> None:
+def _bootstrap_script_path() -> Path | None:
+    configured_home = os.getenv("LTX2_HOME", "/opt/ltx2")
+    candidates = [
+        Path(configured_home) / "scripts" / "download_models.sh",
+        Path("/opt/ltx2/scripts/download_models.sh"),
+        Path("/scripts/download_models.sh"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _run_model_bootstrap(force_download: bool = False) -> str:
+    bootstrap_script = _bootstrap_script_path()
+    if bootstrap_script is None:
+        raise RuntimeError("bootstrap_script_not_found")
+
+    env = os.environ.copy()
+    if force_download:
+        env["FORCE_MODEL_REDOWNLOAD"] = "true"
+        env["DOWNLOAD_ONCE"] = "false"
+        env["REQUIRE_ALL_MODELS"] = "true"
+
+    try:
+        completed = subprocess.run(
+            [str(bootstrap_script)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=float(os.getenv("MODEL_BOOTSTRAP_TIMEOUT_SECONDS", "3600")),
+            env=env,
+        )
+        return (completed.stdout or "").strip()
+    except subprocess.CalledProcessError as exc:
+        output = (exc.stdout or "").strip()
+        tail = output[-1200:] if output else ""
+        if tail:
+            raise RuntimeError(f"bootstrap_failed: {tail}") from exc
+        raise RuntimeError("bootstrap_failed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("bootstrap_timeout") from exc
+
+
+def _ensure_models_ready(force_download: bool = False) -> str:
+    initial_error: RuntimeError | None = None
+
+    if not force_download:
+        try:
+            _assert_required_model_files()
+            return ""
+        except RuntimeError as exc:
+            initial_error = exc
+
+    output = ""
+    try:
+        output = _run_model_bootstrap(force_download=force_download)
+    except RuntimeError as exc:
+        if initial_error is not None:
+            raise RuntimeError(f"{initial_error} | {exc}") from exc
+        raise
+
     try:
         _assert_required_model_files()
-        return
-    except RuntimeError as initial_error:
-        bootstrap_script = Path(os.getenv("LTX2_HOME", "/opt/ltx2")) / "scripts" / "download_models.sh"
-        if not bootstrap_script.is_file():
-            raise initial_error
+    except RuntimeError as exc:
+        tail = output[-1200:] if output else ""
+        if tail:
+            raise RuntimeError(f"{exc} | bootstrap_log_tail: {tail}")
+        raise
 
-        try:
-            # Run one explicit bootstrap pass from handler path if startup bootstrap missed.
-            subprocess.run(
-                [str(bootstrap_script)],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=float(os.getenv("MODEL_BOOTSTRAP_TIMEOUT_SECONDS", "3600")),
-            )
-        except subprocess.CalledProcessError as exc:
-            output = (exc.stdout or "").strip()
-            tail = output[-1200:] if output else ""
-            if tail:
-                raise RuntimeError(f"{initial_error} | bootstrap_failed: {tail}") from exc
-            raise RuntimeError(f"{initial_error} | bootstrap_failed") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"{initial_error} | bootstrap_timeout") from exc
-
-        # Re-check after bootstrap attempt.
-        _assert_required_model_files()
+    return output
 
 
 def _history_execution_error(history_entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -1205,8 +1247,17 @@ def handle_event(event: dict[str, Any]) -> dict[str, Any]:
             return _healthcheck(comfy_url)
 
         if _to_bool(req.get("bootstrap_models"), False):
-            _ensure_models_ready()
-            return {"ok": True, "mode": "bootstrap", "models_ready": True}
+            force_download = _to_bool(req.get("force_model_download"), False) or _to_bool(
+                req.get("force_download"), False
+            )
+            bootstrap_output = _ensure_models_ready(force_download=force_download)
+            return {
+                "ok": True,
+                "mode": "bootstrap",
+                "models_ready": True,
+                "force_model_download": force_download,
+                "bootstrap_log_tail": bootstrap_output[-1200:] if bootstrap_output else "",
+            }
 
         created_input_file = _materialize_input_image(req)
 

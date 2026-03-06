@@ -7,6 +7,7 @@ MARKER_FILE="${MODEL_ROOT}/.ltx2_models_ready"
 SOURCE_MANIFEST_FILE="${MODEL_ROOT}/.ltx2_model_sources"
 DOWNLOAD_ONCE="${DOWNLOAD_ONCE:-true}"
 REQUIRE_ALL_MODELS="${REQUIRE_ALL_MODELS:-false}"
+FORCE_MODEL_REDOWNLOAD="${FORCE_MODEL_REDOWNLOAD:-false}"
 WGET_TRIES="${WGET_TRIES:-20}"
 WGET_TIMEOUT="${WGET_TIMEOUT:-30}"
 GEMMA_BUNDLE_DIR="${MODEL_ROOT}/text_encoders/gemma-3-12b-it-qat-q4_0-unquantized"
@@ -311,6 +312,12 @@ source_manifest_matches_current() {
 }
 
 cleanup_external_model_symlinks
+
+if [ "${FORCE_MODEL_REDOWNLOAD}" = "true" ]; then
+  echo "[models] FORCE_MODEL_REDOWNLOAD=true, forcing refresh for all configured models."
+  rm -f "${MARKER_FILE}" "${SOURCE_MANIFEST_FILE}" || true
+  FORCE_RECHECK=1
+fi
 
 if [ "${DOWNLOAD_ONCE}" = "true" ] && [ -f "${MARKER_FILE}" ]; then
   missing_required=0

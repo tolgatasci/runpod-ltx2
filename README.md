@@ -190,6 +190,7 @@ Bu modda worker request uzerinden kalite ayarlarini degistirebilirsin:
 
 - `ping=true` (workflow calistirmadan health-check)
 - `bootstrap_models=true` (sadece model bootstrap yapar, generation calistirmaz)
+- `force_model_download=true` (`bootstrap_models=true` ile birlikte, tum model dosyalarini zorla yeniden indirir)
 - `duration_seconds` (otomatik `frames` hesaplar)
 - `fps`
 - `steps`
